@@ -1,1 +1,5 @@
 data/Base\ File.csv
+data/~*.docx
+data/Met_data.csv
+data/receptor_distance.csv
+*.DS_Store
