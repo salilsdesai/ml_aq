@@ -1,11 +1,3 @@
-data/Base\ File.csv
-data/~*.docx
-data/Met_data.csv
-data/receptor_distance.csv
-data/Met_1_1.dbf
-data/Base\ File.dbf
-data/Emission\ Rates.dbf
-data/met/JFK.dbf
-data/met/LGA.dbf
-data/met/NYC.dbf
+data/ML_AQ/Base\ File.csv
+data/ML_AQ/~*.docx
 *.DS_Store 
