@@ -26,7 +26,7 @@ def gather_individual_met_data():
 		sfc = iter(sfc_file)
 		next(sfc)
 
-		out_file = open('data/' + station_name.lower() + '_met_data.csv', 'w')
+		out_file = open('data/met_data_' + station_name.lower() + '.csv', 'w')
 
 		out_file.write(SNAKE_CASE(MET_DATA_FIELDS[0]))
 		for i in range(1, len(MET_DATA_FIELDS)):
