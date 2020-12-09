@@ -112,7 +112,7 @@ def gather_average_met_data():
 		None,
 	]
 
-	empty_values = set([9999, 999, 99, 9, -9, -99, -999, -9999])
+	empty_values = set([99999, 9999, 999, 99, 99.9, 9, -9, -99, -999, -9999, -99999])
 	stations = [(2, 'NYC'), (3, 'LGA'), (4, 'JFK')]
 	out_file = open('data/met_data.csv', 'w')
 
@@ -145,7 +145,7 @@ def gather_average_met_data():
 				vals = pfl_items + sfc_items
 
 				for i in range(len(vals)):
-					if fields[i] is not None and float(vals[i]) not in empty_values:
+					if fields[i] is not None and ((fields[i] == 'Cloud Cover') or (float(vals[i]) not in empty_values)):
 						values_sums[i] += float(vals[i])
 						values_counts[i] += 1
 			except StopIteration:
