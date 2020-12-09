@@ -15,7 +15,7 @@ MET_DATA_FIELDS = [
 	'Anemometer Height Stage 3', 'Temperature Stage 3', 'Measurement Height Stage 3',
 	'Precipitation Type', 'Precipitation Amount', 'Relative Humidity',
 	'Station Pressure', 'Cloud Cover', 'Wind Speed Adjustment and Data Source Flag',
-	'Cloud Cover and Temperature Substition by Interpolation',
+	'Cloud Cover and Temperature Substitution by Interpolation',
 ]
 
 def gather_individual_met_data():
@@ -101,7 +101,6 @@ def gather_average_met_data():
 			if default_values[i] is not None:
 				out_file.write(',' + str(values_sums[i]/values_counts[i]))
 	out_file.close()
-
 
 
 if __name__ == "__main__":
