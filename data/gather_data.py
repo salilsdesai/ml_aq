@@ -44,6 +44,7 @@ def gather_individual_met_data():
 		sfc_file = open('data/ML_AQ/met/' + station_name + '-1317.SFC.SFC', 'r')
 		pfl = iter(pfl_file)
 		sfc = iter(sfc_file)
+		next(sfc)
 
 		out_file = open('data/' + station_name.lower() + '_met_data.csv', 'w')
 
@@ -144,7 +145,7 @@ def gather_average_met_data():
 				vals = pfl_items + sfc_items
 
 				for i in range(len(vals)):
-					if fields[i] is not None and vals[i] not in empty_values:
+					if fields[i] is not None and float(vals[i]) not in empty_values:
 						values_sums[i] += float(vals[i])
 						values_counts[i] += 1
 			except StopIteration:
@@ -161,6 +162,7 @@ def gather_average_met_data():
 	out_file.close()
 
 if __name__ == "__main__":
+	gather_individual_met_data()
 	gather_average_met_data()
 
 	
