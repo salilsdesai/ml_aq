@@ -17,6 +17,16 @@ MET_DATA_FIELDS = [
 	'Station Pressure', 'Cloud Cover', 'Wind Speed Adjustment and Data Source Flag',
 	'Cloud Cover and Temperature Substitution by Interpolation',
 ]
+LINK_FIELDS = [
+	'ID', 'X', 'Y', 'Nearest Met Station ID',
+	'Nearest Met Station Distance',
+	'Nearest Met Station Angle', 'Elevation Min', 
+	'Elevation Max', 'Elevation Mean', 
+	'Traffic Speed', 'Traffic Flow', 'Link Length',
+	'Fleet Mix Light', 'Fleet Mix Medium',
+	'Fleet Mix Heavy', 'Fleet Mix Commercial',
+	'Fleet Mix Bus',
+]
 
 def gather_individual_met_data():
 	for station_name in MET_STATIONS:
@@ -102,7 +112,81 @@ def gather_average_met_data():
 				out_file.write(',' + str(values_sums[i]/values_counts[i]))
 	out_file.close()
 
+def gather_link_data():
+	links = {}
+
+	df = pd.read_csv('data/ML_AQ/Met_1_1.csv')
+	for row in df.iterrows():
+		link = [-1] * len(LINK_FIELDS)
+		entry = row[1]
+		link[0] = int(entry['ID'])
+		link[1] = float(entry['Center_X'])
+		link[2] = float(entry['Center_Y'])
+		link[3]	= int(entry['NEAR_FID'])
+		link[4] = float(entry['NEAR_DIST'])
+		link[5] = float(entry['NEAR_ANGLE'])
+		links[link[0]] = link
+	
+	df = pd.read_excel('data/ML_AQ/link_ele_2.xlsx')
+	for row in df.iterrows():
+		entry = row[1]
+		link = links[int(entry['ID'])]
+		link[6] = float(entry['MIN'])
+		link[7] = float(entry['MAX'])
+		link[8] = float(entry['MEAN'])
+	
+	df = pd.read_csv('data/ML_AQ/Base File.csv')
+	
+	base_data = {}
+	for row in df.iterrows():
+		entry = row[1]
+		id = int(entry['LinkID'])
+		if id in links:
+			if id in base_data:
+				data = base_data[id]
+			else:
+				data = ([], [], float(entry['linkLength']))
+				base_data[id] = data
+			l = data[0] if int(entry['DirectionID']) == -1 else data[1]
+			l.append((float(entry['Speed']), float(entry['Flow'])))
+
+	for (id, data) in base_data.items():
+		link = links[id]
+		# Get the average speed and flow for each direction
+		speeds_and_flows = [[0, 0], [0, 0]]
+		for i in [0, 1]:
+			for entry in data[i]:
+				for j in [0, 1]:
+					speeds_and_flows[i][j] += (entry[j] / len(data[i]))
+
+		# Speed is weighted average of average speeds in both directions (weighted by flow)
+		link[9] = \
+			(speeds_and_flows[0][0] * speeds_and_flows [0][1] + speeds_and_flows[1][0] * speeds_and_flows [1][1]) / \
+			(speeds_and_flows[0][1] + speeds_and_flows[1][1]) 
+
+		# Flow is sum of average flow in both directions
+		link[10] = speeds_and_flows[0][1] + speeds_and_flows[1][1]
+		link[11] = data[2] 
+	
+	df = pd.read_excel('data/ML_AQ/fleet_share.xlsx')
+
+	vehicle_types = ['Light', 'Medium', 'Heavy', 'Commercial', 'Bus']
+	times_of_day = [('Morning', 4), ('Midday', 6), ('PM', 4), ('ND', 10)]
+
+	for row in df.iterrows():
+		entry = row[1]
+		link = links[entry['ID']]
+		for i in range(len(vehicle_types)):
+			for (time, length) in times_of_day:
+				link[i + 12] += (entry[time + '_' + vehicle_types[i] + '_%'] * length / 24)
+	
+	out_file = open('link_data.csv', 'w')
+	format = lambda l: str(l).replace('\'', '').replace(', ', ',')[1:-1] + '\n'
+	out_file.write(format(list(map(lambda s: SNAKE_CASE(s), LINK_FIELDS))))
+	for link in links.values():
+		out_file.write(format(link))
+	out_file.close()
+
 
 if __name__ == "__main__":
-	gather_individual_met_data()
-	gather_average_met_data()
+	gather_link_data()
