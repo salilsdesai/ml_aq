@@ -1,4 +1,5 @@
 import pandas as pd
+from simpledbf import Dbf5
 
 SNAKE_CASE = lambda s: s.lower().replace(' ', '_')
 MET_STATIONS = ['NYC', 'LGA', 'JFK']
@@ -26,6 +27,9 @@ LINK_FIELDS = [
 	'Fleet Mix Light', 'Fleet Mix Medium',
 	'Fleet Mix Heavy', 'Fleet Mix Commercial',
 	'Fleet Mix Bus',
+]
+RECEPTOR_FIELDS = [
+	'ID', 'X', 'Y', 'Elevation', 'Pollution Concentration'
 ]
 
 def gather_individual_met_data():
@@ -112,6 +116,14 @@ def gather_average_met_data():
 				out_file.write(',' + str(values_sums[i]/values_counts[i]))
 	out_file.close()
 
+def write_lists_to_csv(name, fields, items):
+	out_file = open('data/' + name + '_data.csv', 'w')
+	format = lambda l: str(l).replace('\'', '').replace(', ', ',')[1:-1] + '\n'
+	out_file.write(format(list(map(lambda s: SNAKE_CASE(s), fields))))
+	for item in items.values():
+		out_file.write(format(item))
+	out_file.close()
+
 def gather_link_data():
 	links = {}
 
@@ -180,13 +192,28 @@ def gather_link_data():
 			for (time, length) in times_of_day:
 				link[i + 12] += (entry[time + '_' + vehicle_types[i] + '_%'] * length / 24)
 	
-	out_file = open('link_data.csv', 'w')
-	format = lambda l: str(l).replace('\'', '').replace(', ', ',')[1:-1] + '\n'
-	out_file.write(format(list(map(lambda s: SNAKE_CASE(s), LINK_FIELDS))))
-	for link in links.values():
-		out_file.write(format(link))
-	out_file.close()
+	write_lists_to_csv('link', LINK_FIELDS, links)
+
+def gather_receptor_data():
+	receptors = {}
+	df = Dbf5('data/ML_AQ/receptor_distance.dbf').to_dataframe()
+	for row in df.iterrows():
+		entry = row[1]
+		receptor = [-1] * len(RECEPTOR_FIELDS)
+		receptor[0] = int(entry['OBJECTID'])
+		receptor[1] = float(entry['x'])
+		receptor[2] = float(entry['y'])
+		receptor[4] = float(entry['conc'])
+		receptors[receptor[0]] = receptor
+	
+	df = pd.read_excel('data/ML_AQ/Receptors_ele_1.xlsx')
+	for row in df.iterrows():
+		entry = row[1]
+		if int(entry['Field1']) in receptors:
+			receptors[int(entry['Field1'])][3] = float(entry['Ezlevation (Meter)'])
+	
+	write_lists_to_csv('receptor', RECEPTOR_FIELDS, receptors)
 
 
 if __name__ == "__main__":
-	gather_link_data()
+	gather_receptor_data()
