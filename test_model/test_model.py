@@ -97,7 +97,7 @@ def train(model, num_epochs):
 
 def train_on_sums(model, num_epochs, group_size):
     X, y = load_data_groups('train_data.txt', group_size)
-    optimizer = torch.optim.SGD(model.parameters(), lr = 0.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr = 0.001, weight_decay=0.01)
     for curr_epoch in range(num_epochs):
         running_loss = 0
         for i in range(len(X)):
@@ -118,5 +118,8 @@ def get_test_error(model):
         print((X[i][0].item(), X[i][1].item(), y[i].item(), y_hat[i].item()))
 
 if __name__ == "__main__":
+    generate_data('train_data.txt', 10000)
+    generate_data('test_data.txt', 10000)
     m = Model()
-    train_on_sums(m, 1, 3)
+    train_on_sums(m, 50, 5)
+    get_test_error(m)
