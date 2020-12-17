@@ -1,3 +1,8 @@
+"""
+Test model which demonstrates training on sums of 
+target function outputs
+"""
+
 import torch
 from random import random
 
