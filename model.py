@@ -1,10 +1,25 @@
 import torch
+import numpy as np
 import pandas as pd
 
 INPUT_SIZE = 9
 HIDDEN_SIZE = 8
 LOSS_FUNCTION = torch.nn.MSELoss()
 ERROR_FUNCTION = torch.nn.MSELoss()
+
+def load_feature_stats(filepath):
+	f = open(filepath, 'r')
+	lines = f.readlines()
+	assert (len(lines) == INPUT_SIZE)
+	feature_stats = np.zeros((2, INPUT_SIZE))
+	for i in range(len(lines)):
+		splits = lines[i].split(',')
+		feature_stats[0][i] = float(splits[1])
+		feature_stats[1][i] = float(splits[2])
+	f.close()
+	return feature_stats
+
+FEATURE_STATS = load_feature_stats('data/feature_stats.txt')
 
 class Model(torch.nn.Module):
 	def __init__(self, in_size, hidden_size):
@@ -30,7 +45,7 @@ class Model(torch.nn.Module):
 		dist = (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** 0.5
 		elevation_diff = receptor.elevation - link.elevation_mean
 		vmt = link.traffic_flow * link.link_length
-		x = [
+		x = np.asarray([
 			dist,
 			elevation_diff,
 			vmt,
@@ -39,10 +54,9 @@ class Model(torch.nn.Module):
 			link.fleet_mix_medium,
 			link.fleet_mix_heavy,
 			link.fleet_mix_commercial,
-			link.fleet_mix_bus
-		]
-		assert (len(x) == INPUT_SIZE)
-		return x
+			link.fleet_mix_bus,
+		])
+		return (x - FEATURE_STATS[0])/FEATURE_STATS[1]
 
 	def forward_links(self, links, receptor):
 		x = torch.Tensor([Model.make_x(link, receptor) for link in links])
@@ -106,4 +120,4 @@ def train():
 
 	return model
 
-# TODO: data normalization, meteorological data, use GPU?, hyperparameters, efficient error calc
+# TODO: meteorological data, use GPU?, hyperparameters, efficient error calc

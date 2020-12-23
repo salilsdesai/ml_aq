@@ -3,3 +3,4 @@ data/ML_AQ/~*.docx
 data/ML_AQ/~*.xlsx
 *.DS_Store 
 temp.py
+__pycache__/*
