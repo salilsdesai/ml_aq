@@ -1,104 +1,109 @@
 import torch
 import pandas as pd
-from math import isnan
-from functools import partial
 
 INPUT_SIZE = 9
 HIDDEN_SIZE = 8
 LOSS_FUNCTION = torch.nn.MSELoss()
 ERROR_FUNCTION = torch.nn.MSELoss()
 
-class Network(torch.nn.Module):
-    def __init__(self, in_size, hidden_size):
-        super().__init__()
-        self.layer_1 = torch.nn.Linear(in_size, hidden_size)
-        self.activ = torch.nn.Sigmoid()
-        self.layer_2 = torch.nn.Linear(hidden_size, 1)
-         
-    def forward(self, x):
-        x = self.layer_1(x)
-        x = self.activ(x)
-        x = self.layer_2(x)
-        return x
-    
-    def forward_batch(self, x):
-        return torch.sum(self.forward(x), axis=0)
+class Model(torch.nn.Module):
+	def __init__(self, in_size, hidden_size):
+		super().__init__()
+		self.layer_1 = torch.nn.Linear(in_size, hidden_size)
+		self.activ = torch.nn.Sigmoid()
+		self.layer_2 = torch.nn.Linear(hidden_size, 1)
+
+	def forward(self, x):
+		s1 = self.layer_1(x)
+		a1 = self.activ(s1)
+		s2 = self.layer_2(s1)
+		return s2
+	
+	@staticmethod
+	def make_x(link, receptor):
+		"""
+		Uses the following three fields in [receptor]
+		- x
+		- y
+		- elevation
+		"""
+		dist = (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** 0.5
+		elevation_diff = receptor.elevation - link.elevation_mean
+		vmt = link.traffic_flow * link.link_length
+		x = [
+			dist,
+			elevation_diff,
+			vmt,
+			link.traffic_speed,
+			link.fleet_mix_light,
+			link.fleet_mix_medium,
+			link.fleet_mix_heavy,
+			link.fleet_mix_commercial,
+			link.fleet_mix_bus
+		]
+		assert (len(x) == INPUT_SIZE)
+		return x
+
+	def forward_links(self, links, receptor):
+		x = torch.Tensor([Model.make_x(link, receptor) for link in links])
+		return torch.sum(self.forward(x), axis=0)
 
 def extract_dict(filepath, class_name=''):
-    df = pd.read_csv(filepath)
-    d = {}
-    for row in df.iterrows():
-        obj = type(class_name, (object,), dict(row[1]))
-        d[obj.id] = obj
-    return d
+	df = pd.read_csv(filepath)
+	d = {}
+	for row in df.iterrows():
+		obj = type(class_name, (object,), dict(row[1]))
+		d[obj.id] = obj
+	return d
 
 def extract_list(filepath, class_name=''):
-    df = pd.read_csv(filepath)
-    return [type(class_name, (object,), dict(row[1])) for row in df.iterrows()]
+	df = pd.read_csv(filepath)
+	return [type(class_name, (object,), dict(row[1])) for row in df.iterrows()]
 
-links = extract_list('data/link_data.csv', 'link')
-receptors = extract_dict('data/receptor_data.csv', 'receptor')
+ALL_LINKS = extract_list('data/link_data.csv', 'link')
+ALL_RECEPTORS = extract_dict('data/receptor_data.csv', 'receptor')
 
-def pair(receptor, link):
-    if isnan(link.fleet_mix_light):
-        return None
-    dist = (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** 0.5
-    elevation_diff = receptor.elevation - link.elevation_mean
-    vmt = link.traffic_flow * link.link_length
-    x = [
-        dist,
-        elevation_diff,
-        vmt,
-        link.traffic_speed,
-        link.fleet_mix_light,
-        link.fleet_mix_medium,
-        link.fleet_mix_heavy,
-        link.fleet_mix_commercial,
-        link.fleet_mix_bus
-    ]
-    assert (len(x) == INPUT_SIZE)
-    return x
+def get_error(model, links, receptors, y):
+	"""
+	[links] is a python list of all links which contribute to emissions at receptors in [receptors]
+	[receptors] is python list of receptors with x, y, and elevation set
+	[y] is Tensor of corresponding true pollution concentrations
+	"""
+	y_hat = torch.Tensor([model.forward_links(links, r) for r in receptors]) 
+	return ERROR_FUNCTION(y_hat, y).item()
 
-def make_batches(receptor_ids):
-    """
-    Returns X y = ([X1, X2, ...], [y1, y2, ...])
-    """
+def train():
+	train_receptors = []
+	val_receptors = []
 
-    X = [None] * len(receptor_ids)
-    y = [None] * len(receptor_ids)
+	# 60% Train, 20% Val
+	i = 0
+	for receptor in ALL_RECEPTORS.values():
+		if (i % 5 < 3):
+			train_receptors.append(receptor)
+		elif (i % 5 == 3):
+			val_receptors.append(receptor)
+		i += 1
 
-    i = 0
-    for receptor_id in receptor_ids:
-        receptor = receptors[receptor_id]
-        pair_with_receptor = partial(pair, receptor)
-        X[i] = [p for p in map(pair_with_receptor, links) if p is not None]
-        y[i] = [receptor.pollution_concentration]
-        i += 1
-  
-    return (torch.Tensor(X), torch.Tensor(y))
+	train_y = torch.Tensor([r.pollution_concentration for r in train_receptors])
+	val_y = torch.Tensor([r.pollution_concentration for r in val_receptors])
 
-def get_error(model, batches):
-    (X, y) = batches
-    y_hat = torch.Tensor([model.forward_batch(Xi) for Xi in X]) # TODO: Efficient
-    return ERROR_FUNCTION(y_hat, y).item()
+	model = Model(in_size=INPUT_SIZE, hidden_size=HIDDEN_SIZE)
 
-train_batches = make_batches(range(1, 1001))
-val_batches = make_batches(range(1001, 2001))
+	num_epochs = 10
+	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.01)
+	for _ in range(num_epochs):
+		for i in range(len(train_receptors)):
+			optimizer.zero_grad()
+			y_hat = model.forward_links(ALL_LINKS, train_receptors[i])
+			loss = LOSS_FUNCTION(y_hat, train_y[i])
+			loss.backward()
+			optimizer.step()
+			if ((i + 1) % 100 == 0):
+				print('Loss: ' + str(loss.item()))
+				print('Train Error: ' + str(get_error(model, ALL_LINKS, train_receptors, train_y)))
+				print('Val Error: ' + str(get_error(model, ALL_LINKS, val_receptors, val_y)))
 
-train_X_batches, train_y_batches = train_batches
-num_epochs = 1
-model = Network(in_size=INPUT_SIZE, hidden_size=HIDDEN_SIZE)
-optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0001)
-for curr_epoch in range(num_epochs):
-    for i in range(len(train_X_batches)):
-        optimizer.zero_grad()
-        y_hat = model.forward_batch(train_X_batches[i])
-        loss = LOSS_FUNCTION(y_hat, train_y_batches[i])
-        loss.backward()
-        optimizer.step()
-        if (i % 100 == 0):
-            print('Loss: ' + str(loss))
-            print('Train Error: ' + str(get_error(model, train_batches)))
-            print('Val Error: ' + str(get_error(model, val_batches)))
+	return model
 
-# TODO: data normalization, meteorological data, use GPU, hyperparameters, efficient error calc
+# TODO: data normalization, meteorological data, use GPU?, hyperparameters, efficient error calc
