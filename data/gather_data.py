@@ -77,7 +77,7 @@ def gather_average_met_data():
 	out_file.write('id,name,latitude,longitude')
 	for i in range(len(MET_DATA_FIELDS)):
 		if default_values[i] is not None:
-			out_file.write(',' + MET_DATA_FIELDS[i])
+			out_file.write(',' + SNAKE_CASE(MET_DATA_FIELDS[i]))
 
 	for index in range(len(MET_STATIONS)):
 		station_name = MET_STATIONS[index]
