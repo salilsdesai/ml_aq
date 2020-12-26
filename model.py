@@ -1,10 +1,11 @@
 import torch
 import pandas as pd
-from math import isnan
 from functools import partial, reduce
 from time import time
 import numpy as np
 from random import shuffle
+
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 INPUT_SIZE = 9
 HIDDEN_SIZE = 8
@@ -19,9 +20,9 @@ def extract_list(filepath, class_name=''):
 def prep_links(links=None):
 	if links is None:
 		links = extract_list('data/link_data.csv', 'link')
-	coords = torch.DoubleTensor([[l.x, l.y] for l in links]).T
+	coords = torch.DoubleTensor([[l.x, l.y] for l in links]).T.to(DEVICE)
 	coords_dot = (coords * coords).sum(dim=0)
-	subtract = torch.Tensor([[l.elevation_mean] for l in links])
+	subtract = torch.Tensor([[l.elevation_mean] for l in links]).to(DEVICE)
 	keep = torch.Tensor([[[
 	  link.traffic_flow * link.link_length,
 	  link.traffic_speed,
@@ -30,15 +31,16 @@ def prep_links(links=None):
 	  link.fleet_mix_heavy,
 	  link.fleet_mix_commercial,
 	  link.fleet_mix_bus
-	] for link in links]])
+	] for link in links]]).to(DEVICE).repeat(BATCH_SIZE, 1, 1)
+	# If too much memory or need multiple batch sizes, move repeat to make_x (distances.shape[0])
 	return (coords, coords_dot, subtract, keep)
   
 def prep_receptors(receptors=None):
 	if receptors is None:
 		receptors = extract_list('data/receptor_data.csv', 'receptor')
-	coords = torch.DoubleTensor([[r.x, r.y] for r in receptors])
+	coords = torch.DoubleTensor([[r.x, r.y] for r in receptors]).to(DEVICE)
 	coords_dot = (coords * coords).sum(dim=1).unsqueeze(dim=-1)
-	subtract = torch.Tensor([[[r.elevation]] for r in receptors])
+	subtract = torch.Tensor([[[r.elevation]] for r in receptors]).to(DEVICE)
 	return (coords, coords_dot, subtract)
 
 def load_feature_stats(filepath):
@@ -55,16 +57,16 @@ def load_feature_stats(filepath):
 		feature_stats[0][i] = float(splits[1])
 		feature_stats[1][i] = float(splits[2])
 	f.close()
-	return feature_stats
+	return feature_stats.to(DEVICE)
 
 FEATURE_STATS = load_feature_stats('data/feature_stats.txt')
 
 class Model(torch.nn.Module):
 	def __init__(self, in_size, hidden_size):
 		super().__init__()
-		self.layer_1 = torch.nn.Linear(in_size, hidden_size)
-		self.activ = torch.nn.Sigmoid()
-		self.layer_2 = torch.nn.Linear(hidden_size, 1)
+		self.layer_1 = torch.nn.Linear(in_size, hidden_size).to(DEVICE)
+		self.activ = torch.nn.Sigmoid().to(DEVICE)
+		self.layer_2 = torch.nn.Linear(hidden_size, 1).to(DEVICE)
 
 	def forward(self, x):
 		s1 = self.layer_1(x)
@@ -74,11 +76,12 @@ class Model(torch.nn.Module):
 
 	@staticmethod
 	def make_x(links, receptors):
-		distances = (links[1] - (2 * (receptors[0] @ links[0])) + receptors[1]).sqrt().unsqueeze(dim=2).type(torch.Tensor)
+		distances = (links[1] - (2 * (receptors[0] @ links[0])) + receptors[1]).sqrt().unsqueeze(dim=2).type(torch.Tensor).to(DEVICE)
 		subtracted = links[2] - receptors[2]
-		kept = links[3].repeat(distances.shape[0], 1, 1)
+		kept = links[3]
 		cat = torch.cat((distances, subtracted, kept), dim=-1)
-		return (cat - FEATURE_STATS[0])/FEATURE_STATS[1]
+		normalized = (cat - FEATURE_STATS[0])/FEATURE_STATS[1]
+		return normalized
 
 	def forward_batch(self, links, receptors):
 		return self.forward(Model.make_x(links, receptors)).sum(dim=1)
@@ -92,7 +95,7 @@ def get_error(model, links, receptors, y):
 
 def train(model):
 	links_list = extract_list('data/link_data.csv', 'link')
-	receptors_list = extract_list('data/receptor_data.csv', 'receptor')
+	receptors_list = [r for r in extract_list('data/receptor_data.csv', 'receptor') if r.pollution_concentration != 0]
 
 	shuffle(links_list)
 	shuffle(receptors_list)
@@ -106,7 +109,7 @@ def train(model):
 			if (i + BATCH_SIZE <= len(unprepped)):
 				b = unprepped[i:i+BATCH_SIZE]
 				receptors = prep_receptors(b)
-				y = torch.Tensor([[r.pollution_concentration] for r in b])
+				y = torch.Tensor([[r.pollution_concentration] for r in b]).to(DEVICE)
 				batches.append((receptors, y))
 		return batches
 
@@ -129,10 +132,10 @@ def train(model):
 		print('Finished Epoch ' + str(curr_epoch) + ' (' + str(time() - start_time) + ' seconds)')
 		print('Epoch Loss: ' + str(epoch_loss / len(train_batches)))
 		print('Val Error: ' + str(sum([get_error(model, links, receptors, y) for (receptors, y) in val_batches])/len(val_batches)))
-		print('Train Error: ' + str(sum([get_error(model, links, receptors, y) for (receptors, y) in train_batches])/len(train_batches)))
+		# print('Train Error: ' + str(sum([get_error(model, links, receptors, y) for (receptors, y) in train_batches])/len(train_batches)))
 
 if __name__ == "__main__":
 	model = Model(in_size=INPUT_SIZE, hidden_size=HIDDEN_SIZE)
 	train(model)
 
-# TODO: meteorological data, use GPU?, hyperparameters
+# TODO: meteorological data, hyperparameters
