@@ -1,11 +1,11 @@
 import torch
 import pandas as pd
-from functools import partial, reduce
-from time import time
-import numpy as np
+from time import time, strftime, localtime
 from random import shuffle
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+if DEVICE != 'cuda':
+	print('WARNING: Not using GPU')
 
 INPUT_SIZE = 9
 HIDDEN_SIZE = 8
@@ -62,11 +62,11 @@ def load_feature_stats(filepath):
 FEATURE_STATS = load_feature_stats('data/feature_stats.txt')
 
 class Model(torch.nn.Module):
-	def __init__(self, in_size, hidden_size):
+	def __init__(self):
 		super().__init__()
-		self.layer_1 = torch.nn.Linear(in_size, hidden_size).to(DEVICE)
+		self.layer_1 = torch.nn.Linear(INPUT_SIZE, HIDDEN_SIZE).to(DEVICE)
 		self.activ = torch.nn.Sigmoid().to(DEVICE)
-		self.layer_2 = torch.nn.Linear(hidden_size, 1).to(DEVICE)
+		self.layer_2 = torch.nn.Linear(HIDDEN_SIZE, 1).to(DEVICE)
 
 	def forward(self, x):
 		s1 = self.layer_1(x)
@@ -86,14 +86,48 @@ class Model(torch.nn.Module):
 	def forward_batch(self, links, receptors):
 		return self.forward(Model.make_x(links, receptors)).sum(dim=1)
 
-def get_error(model, links, receptors, y):
-	"""
-	[y] is Tensor of corresponding true pollution concentrations
-	"""
-	y_hat = model.forward_batch(links, receptors)
-	return ERROR_FUNCTION(y_hat, y).item()
+	def get_error(self, links, receptors, y):
+		"""
+		[y] is Tensor of corresponding true pollution concentrations
+		"""
+		y_hat = self.forward_batch(links, receptors)
+		return ERROR_FUNCTION(y_hat, y).item()
+	
+	def save(self, filepath, optimizer=None):
+		torch.save({
+			'model_state_dict': self.state_dict(),
+			'optimizer_class': optimizer.__class__,
+			'optimizer_state_dict': optimizer.state_dict(),
+			'time': strftime('%m-%d-%y %H:%M:%S', localtime(time())),
+		}, filepath)
+	
+	@staticmethod
+	def load(filepath):
+		loaded = torch.load(filepath)
+		model = Model()
+		model.load_state_dict(loaded['model_state_dict'])
+		optimizer = loaded['optimizer_class'](model.parameters())
+		optimizer.load_state_dict(loaded['optimizer_state_dict'])
+		return (model, optimizer)
 
-def train(model):
+	def train(self, optimizer, num_epochs, links, train_batches, val_batches):
+		start_time = time()
+		for curr_epoch in range(num_epochs):
+			epoch_loss = 0
+			for (receptors, y) in train_batches:
+				optimizer.zero_grad()
+				y_hat = self.forward_batch(links, receptors)
+				loss = LOSS_FUNCTION(y_hat, y)
+				epoch_loss += loss.item()
+				loss.backward()
+				optimizer.step()
+			print('---------------------------------------------')
+			print('Finished Epoch ' + str(curr_epoch) + ' (' + str(time() - start_time) + ' seconds)')
+			print('Epoch Loss: ' + str(epoch_loss / len(train_batches)))
+			print('Val Error: ' + str(sum([self.get_error(links, receptors, y) for (receptors, y) in val_batches])/len(val_batches)))
+			# print('Train Error: ' + str(sum([self.get_error(links, receptors, y) for (receptors, y) in train_batches])/len(train_batches)))
+
+if __name__ == "__main__":
 	links_list = extract_list('data/link_data.csv', 'link')
 	receptors_list = [r for r in extract_list('data/receptor_data.csv', 'receptor') if r.pollution_concentration != 0]
 
@@ -116,26 +150,11 @@ def train(model):
 	train_batches = make_batches(lambda i: (i % 5 < 3)) # 60%
 	val_batches = make_batches(lambda i: (i % 5 == 3)) # 20%
 
-	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.01)
+	model = Model()
+	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0001)
 	num_epochs = 10
-	start_time = time()
-	for curr_epoch in range(num_epochs):
-		epoch_loss = 0
-		for (receptors, y) in train_batches:
-			optimizer.zero_grad()
-			y_hat = model.forward_batch(links, receptors)
-			loss = LOSS_FUNCTION(y_hat, y)
-			epoch_loss += loss.item()
-			loss.backward()
-			optimizer.step()
-		print('---------------------------------------------')
-		print('Finished Epoch ' + str(curr_epoch) + ' (' + str(time() - start_time) + ' seconds)')
-		print('Epoch Loss: ' + str(epoch_loss / len(train_batches)))
-		print('Val Error: ' + str(sum([get_error(model, links, receptors, y) for (receptors, y) in val_batches])/len(val_batches)))
-		# print('Train Error: ' + str(sum([get_error(model, links, receptors, y) for (receptors, y) in train_batches])/len(train_batches)))
 
-if __name__ == "__main__":
-	model = Model(in_size=INPUT_SIZE, hidden_size=HIDDEN_SIZE)
-	train(model)
+	model.train(optimizer, num_epochs, links, train_batches, val_batches)
+	model.save('model_save_' + strftime('%m-%d-%y %H:%M:%S', localtime(time())), optimizer)
 
 # TODO: meteorological data, hyperparameters
