@@ -29,7 +29,7 @@ LINK_FIELDS = [
 	'Fleet Mix Bus',
 ]
 RECEPTOR_FIELDS = [
-	'ID', 'X', 'Y', 'Elevation', 'Pollution Concentration'
+	'ID', 'X', 'Y', 'Elevation', 'Pollution Concentration', 'Nearest Link Distance'
 ]
 
 def gather_individual_met_data():
@@ -219,6 +219,7 @@ def gather_receptor_data():
 		receptor[1] = float(entry['x'])
 		receptor[2] = float(entry['y'])
 		receptor[4] = float(entry['conc'])
+		receptor[5] = float(entry['NEAR_DIST'])
 		receptors[receptor[0]] = receptor
 	
 	df = pd.read_excel('data/ML_AQ/Receptors_ele_1.xlsx')
