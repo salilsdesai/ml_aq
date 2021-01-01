@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
 from model import extract_list
 
 # Stats Recorder Class by Matt Hancock (http://notmatthancock.github.io/2017/03/23/simple-batch-stat-updates.html)
@@ -54,6 +56,7 @@ def get_feature_stats():
     features = (
         [
             ('distance', (lambda link, receptor: (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** 0.5)),
+            ('distance_inverse', (lambda link, receptor: (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** (-0.5))),
             ('elevation_difference', (lambda link, receptor: receptor.elevation - link.elevation_mean)),
         ],
         [
@@ -86,6 +89,14 @@ def get_feature_stats():
 
     out_file.close()
 
+def visualize_distribution(filepath, fns):
+    df = pd.read_csv(filepath)
+    values = [[f(row[1]) for row in df.iterrows()] for f in fns]
+    for v in values:
+        print(np.mean(v))
+        print(np.std(v))
+        plt.hist(v)
+        plt.show()
+
 if __name__ == "__main__":
     get_feature_stats()
-    

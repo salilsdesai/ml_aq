@@ -2,16 +2,24 @@ import torch
 import pandas as pd
 from time import time, strftime, localtime
 from random import shuffle
+from matplotlib import pyplot as plt
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 if DEVICE != 'cuda':
 	print('WARNING: Not using GPU')
 
-INPUT_SIZE = 9
 HIDDEN_SIZE = 8
 LOSS_FUNCTION = torch.nn.MSELoss()
 ERROR_FUNCTION = torch.nn.MSELoss()
 BATCH_SIZE = 1000
+
+# Used to load means and std devs for feature normilization
+FEATURES = [
+	'distance', 'elevation_difference', 'vmt', 'traffic_speed', 
+	'fleet_mix_light', 'fleet_mix_medium', 'fleet_mix_heavy', 
+	'fleet_mix_commercial', 'fleet_mix_bus',
+]
+INPUT_SIZE = len(FEATURES)
 
 def extract_list(filepath, class_name=''):
 	df = pd.read_csv(filepath)
@@ -50,13 +58,14 @@ def load_feature_stats(filepath):
 	"""
 	f = open(filepath, 'r')
 	lines = f.readlines()
-	assert (len(lines) == INPUT_SIZE)
-	feature_stats = torch.zeros((2, INPUT_SIZE))
+	feature_stats_dict = {}
 	for i in range(len(lines)):
 		splits = lines[i].split(',')
-		feature_stats[0][i] = float(splits[1])
-		feature_stats[1][i] = float(splits[2])
+		feature_stats_dict[splits[0]] = (float(splits[1]), float(splits[2]))
 	f.close()
+	feature_stats = torch.Tensor(2, INPUT_SIZE)
+	for i in range(INPUT_SIZE):
+		(feature_stats[0][i], feature_stats[1][i]) = feature_stats_dict[FEATURES[i]]
 	return feature_stats.to(DEVICE)
 
 FEATURE_STATS = load_feature_stats('data/feature_stats.txt')
@@ -92,7 +101,7 @@ class Model(torch.nn.Module):
 		"""
 		y_hat = self.forward_batch(links, receptors)
 		return ERROR_FUNCTION(y_hat, y).item()
-	
+
 	def save(self, filepath, optimizer=None):
 		torch.save({
 			'model_state_dict': self.state_dict(),
@@ -110,8 +119,32 @@ class Model(torch.nn.Module):
 		optimizer.load_state_dict(loaded['optimizer_state_dict'])
 		return (model, optimizer)
 
-	def train(self, optimizer, num_epochs, links, train_batches, val_batches):
+	def train(
+		self, 
+		optimizer, 
+		num_epochs, 
+		links, 
+		train_batches, 
+		val_batches, 
+		save_location=None, 
+		make_graphs=False
+	):
 		start_time = time()
+
+		losses = []
+		train_errors = [] 
+		val_errors = []
+
+		def get_stats(loss):
+			losses.append(loss / len(train_batches))
+			print('Loss: ' + str(losses[-1]))
+			train_errors.append(sum([self.get_error(links, receptors, y) for (receptors, y) in train_batches])/len(train_batches))
+			print('Train Error: ' + str(train_errors[-1]))
+			val_errors.append(sum([self.get_error(links, receptors, y) for (receptors, y) in val_batches])/len(val_batches))
+			print('Val Error: ' + str(val_errors[-1]))
+
+		get_stats(sum([LOSS_FUNCTION(self.forward_batch(links, receptors), y).item() for (receptors, y) in train_batches]))
+
 		for curr_epoch in range(num_epochs):
 			epoch_loss = 0
 			for (receptors, y) in train_batches:
@@ -123,9 +156,17 @@ class Model(torch.nn.Module):
 				optimizer.step()
 			print('---------------------------------------------')
 			print('Finished Epoch ' + str(curr_epoch) + ' (' + str(time() - start_time) + ' seconds)')
-			print('Epoch Loss: ' + str(epoch_loss / len(train_batches)))
-			print('Val Error: ' + str(sum([self.get_error(links, receptors, y) for (receptors, y) in val_batches])/len(val_batches)))
-			# print('Train Error: ' + str(sum([self.get_error(links, receptors, y) for (receptors, y) in train_batches])/len(train_batches)))
+			get_stats(epoch_loss)
+			if save_location is not None and val_errors[-1] == min(val_errors):
+				self.save(save_location, optimizer)
+				print('Saved Model!')
+		
+		if make_graphs:
+			titles = iter(('Loss', 'Train Error', 'Val Error'))
+			for l in (losses, train_errors, val_errors):
+				plt.plot(range(len(l)), l)
+				plt.title(next(titles))
+				plt.show()
 
 if __name__ == "__main__":
 	links_list = extract_list('data/link_data.csv', 'link')
@@ -153,8 +194,24 @@ if __name__ == "__main__":
 	model = Model()
 	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0001)
 	num_epochs = 10
+	save_location = 'model_save_' + strftime('%m-%d-%y %H:%M:%S')
 
-	model.train(optimizer, num_epochs, links, train_batches, val_batches)
-	model.save('model_save_' + strftime('%m-%d-%y %H:%M:%S', localtime(time())), optimizer)
+	model.train(
+		optimizer, 
+		num_epochs, 
+		links, 
+		train_batches, 
+		val_batches,
+		save_location,
+		True,
+	)
+
+	best_model, _ = Model.load(save_location)
+	(r, y) = val_batches[1]
+	fwd = best_model.forward_batch(links, r)
+	for i in range(5):
+		print((fwd[i].item(), y[i].item()))
+
+	print(best_model.get_error(links, r, y))
 
 # TODO: meteorological data, hyperparameters
