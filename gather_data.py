@@ -214,13 +214,15 @@ def gather_receptor_data():
 	df = Dbf5('data/ML_AQ/receptor_distance.dbf').to_dataframe()
 	for row in df.iterrows():
 		entry = row[1]
-		receptor = [-1] * len(RECEPTOR_FIELDS)
-		receptor[0] = int(entry['OBJECTID'])
-		receptor[1] = float(entry['x'])
-		receptor[2] = float(entry['y'])
-		receptor[4] = float(entry['conc'])
-		receptor[5] = float(entry['NEAR_DIST'])
-		receptors[receptor[0]] = receptor
+		conc = float(entry['conc'])
+		if conc > 0:
+			receptor = [-1] * len(RECEPTOR_FIELDS)
+			receptor[0] = int(entry['OBJECTID'])
+			receptor[1] = float(entry['x'])
+			receptor[2] = float(entry['y'])
+			receptor[4] = conc
+			receptor[5] = float(entry['NEAR_DIST'])
+			receptors[receptor[0]] = receptor
 	
 	df = pd.read_excel('data/ML_AQ/Receptors_ele_1.xlsx')
 	for row in df.iterrows():

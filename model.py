@@ -170,7 +170,7 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
 	links_list = extract_list('data/link_data.csv', 'link')
-	receptors_list = [r for r in extract_list('data/receptor_data.csv', 'receptor') if r.pollution_concentration != 0]
+	receptors_list = extract_list('data/receptor_data.csv', 'receptor')
 
 	shuffle(links_list)
 	shuffle(receptors_list)
