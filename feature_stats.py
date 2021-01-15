@@ -54,17 +54,20 @@ def get_feature_stats():
     receptors = extract_list('data/receptor_data.csv', 'receptor')
     met_data = {(int(row[1]['id'])):(type('MetStation', (object,), dict(row[1]))) for row in pd.read_csv('data/met_data.csv').iterrows()}
 
+    vmt = lambda link: link.traffic_flow * link.link_length
+
     features = (
         [
-            ('distance', (lambda link, receptor: (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** 0.5)),
-            ('distance_inverse', (lambda link, receptor: (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** (-0.5))),
-            ('nearest_link_distance_over_distance', (lambda link, receptor: receptor.nearest_link_distance * ((((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** (-0.5)))),
-            ('elevation_difference', (lambda link, receptor: receptor.elevation - link.elevation_mean)),
         ],
         [
-            ('vmt', (lambda link: link.traffic_flow * link.link_length)),
+            ('vmt', vmt),
             ('wind_direction', lambda link: met_data[link.nearest_met_station_id].wind_direction),
             ('wind_speed', lambda link: met_data[link.nearest_met_station_id].wind_speed),
+            ('vmt_times_fleet_mix_light', lambda link: vmt(link) * link.fleet_mix_light),
+            ('vmt_times_fleet_mix_medium', lambda link: vmt(link) * link.fleet_mix_medium),
+            ('vmt_times_fleet_mix_heavy', lambda link: vmt(link) * link.fleet_mix_heavy),
+            ('vmt_times_fleet_mix_commercial', lambda link: vmt(link) * link.fleet_mix_commercial),
+            ('vmt_times_fleet_mix_bus', lambda link: vmt(link) * link.fleet_mix_bus),
         ],
         [
             'traffic_speed', 'fleet_mix_light', 'fleet_mix_medium',
