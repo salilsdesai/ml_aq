@@ -77,8 +77,10 @@ def get_feature_stats():
         for i in range(len(features[0])):
             srs[i].update(np.asarray([[features[0][i][1](link, receptor)] for receptor in receptors]))
 
-    out_file = open('data/feature_stats.txt', 'w')
+    out_file = open('data/feature_stats.csv', 'w')
     
+    out_file.write('feature,mean,std_dev\n')
+
     for i in range(len(features[0])):
         out_file.write(features[0][i][0] + ',' + str(srs[i].mean[0]) + ',' + str(srs[i].std[0]) + '\n')
     
