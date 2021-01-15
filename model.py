@@ -141,7 +141,9 @@ class Model(torch.nn.Module):
 
 		get_stats(sum([LOSS_FUNCTION(self.forward_batch(links, receptors), y).item() for (receptors, y, _) in train_batches]))
 
-		for curr_epoch in range(num_epochs):
+		curr_epoch = 0
+		stop_training = False
+		while not stop_training:
 			epoch_loss = 0
 			for (receptors, y, _) in train_batches:
 				optimizer.zero_grad()
@@ -153,9 +155,13 @@ class Model(torch.nn.Module):
 			print('---------------------------------------------')
 			print('Finished Epoch ' + str(curr_epoch) + ' (' + str(time() - start_time) + ' seconds)')
 			get_stats(epoch_loss)
-			if save_location is not None and val_errors[-1] == min(val_errors):
+			min_error = min(val_errors)
+			if save_location is not None and val_errors[-1] == min_error:
 				self.save(save_location, optimizer)
 				print('Saved Model!')
+			curr_epoch += 1
+			# Stop when we've surpassed num_epochs or we haven't improved upon the min val error for three iterations
+			stop_training = (curr_epoch >= num_epochs) or ((curr_epoch >= 3) and (val_errors[-1] > min_error) and (val_errors[-2] > min_error) and (val_errors[-3] > min_error))
 		
 		if make_graphs:
 			titles = iter(('Loss', 'Val Error'))
