@@ -27,19 +27,13 @@ def load_feature_stats(filepath):
 	Load the mean and std dev of each feature from a file
 	Used to normalize data
 	"""
-	f = open(filepath, 'r')
-	lines = f.readlines()
-	feature_stats_dict = {}
-	for i in range(len(lines)):
-		splits = lines[i].split(',')
-		feature_stats_dict[splits[0]] = (float(splits[1]), float(splits[2]))
-	f.close()
+	feature_stats_dict = {(row[1]['feature']):(type('FeatureStats', (object,), dict(row[1]))) for row in pd.read_csv(filepath).iterrows()}
 	feature_stats = torch.Tensor(2, INPUT_SIZE)
 	for i in range(INPUT_SIZE):
-		(feature_stats[0][i], feature_stats[1][i]) = feature_stats_dict[FEATURES[i]]
+		(feature_stats[0][i], feature_stats[1][i]) = (lambda f: (f.mean, f.std_dev))(feature_stats_dict[FEATURES[i]])
 	return feature_stats.to(DEVICE)
 
-FEATURE_STATS = load_feature_stats('data/feature_stats.txt')
+FEATURE_STATS = load_feature_stats('data/feature_stats.csv')
 MET_DATA = {(int(row[1]['id'])):(type('MetStation', (object,), dict(row[1]))) for row in pd.read_csv('data/met_data.csv').iterrows()}
 
 def extract_list(filepath, class_name=''):
