@@ -58,6 +58,7 @@ def get_feature_stats():
         [
             ('distance', (lambda link, receptor: (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** 0.5)),
             ('distance_inverse', (lambda link, receptor: (((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** (-0.5))),
+            ('nearest_link_distance_over_distance', (lambda link, receptor: receptor.nearest_link_distance * ((((link.x - receptor.x) ** 2) + ((link.y - receptor.y) ** 2)) ** (-0.5)))),
             ('elevation_difference', (lambda link, receptor: receptor.elevation - link.elevation_mean)),
         ],
         [
