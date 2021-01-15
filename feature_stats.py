@@ -52,6 +52,7 @@ def get_feature_stats():
 
     links = extract_list('data/link_data.csv', 'link')
     receptors = extract_list('data/receptor_data.csv', 'receptor')
+    met_data = {(int(row[1]['id'])):(type('MetStation', (object,), dict(row[1]))) for row in pd.read_csv('data/met_data.csv').iterrows()}
 
     features = (
         [
@@ -60,7 +61,9 @@ def get_feature_stats():
             ('elevation_difference', (lambda link, receptor: receptor.elevation - link.elevation_mean)),
         ],
         [
-            ('vmt', (lambda link: link.traffic_flow * link.link_length))
+            ('vmt', (lambda link: link.traffic_flow * link.link_length)),
+            ('wind_direction', lambda link: met_data[link.nearest_met_station_id].wind_direction),
+            ('wind_speed', lambda link: met_data[link.nearest_met_station_id].wind_speed),
         ],
         [
             'traffic_speed', 'fleet_mix_light', 'fleet_mix_medium',
