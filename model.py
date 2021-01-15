@@ -16,7 +16,7 @@ BATCH_SIZE = 1000
 # Used to load means and std devs for feature normilization
 # Must be in the same order as the features in the tensor passed into the model
 FEATURES = [
-	'distance', 'elevation_difference', 'vmt', 'traffic_speed', 
+	'distance_inverse', 'elevation_difference', 'vmt', 'traffic_speed', 
 	'fleet_mix_light', 'fleet_mix_medium', 'fleet_mix_heavy', 
 	'fleet_mix_commercial', 'fleet_mix_bus', 'wind_direction', 'wind_speed',
 ]
@@ -83,7 +83,7 @@ class Model(torch.nn.Module):
 
 	@staticmethod
 	def make_x(links, receptors):
-		distances = (links[1] - (2 * (receptors[0] @ links[0])) + receptors[1]).sqrt().unsqueeze(dim=2).type(torch.Tensor).to(DEVICE)
+		distances = (links[1] - (2 * (receptors[0] @ links[0])) + receptors[1]).sqrt().reciprocal().unsqueeze(dim=2).type(torch.Tensor).to(DEVICE)
 		subtracted = links[2] - receptors[2]
 		kept = links[3]
 		cat = torch.cat((distances, subtracted, kept), dim=-1)
@@ -136,16 +136,14 @@ class Model(torch.nn.Module):
 		def get_stats(loss):
 			losses.append(loss / len(train_batches))
 			print('Loss: ' + str(losses[-1]))
-			train_errors.append(sum([self.get_error(links, receptors, y) for (receptors, y) in train_batches])/len(train_batches))
-			print('Train Error: ' + str(train_errors[-1]))
-			val_errors.append(sum([self.get_error(links, receptors, y) for (receptors, y) in val_batches])/len(val_batches))
+			val_errors.append(sum([self.get_error(links, receptors, y) for (receptors, y, _) in val_batches])/len(val_batches))
 			print('Val Error: ' + str(val_errors[-1]))
 
-		get_stats(sum([LOSS_FUNCTION(self.forward_batch(links, receptors), y).item() for (receptors, y) in train_batches]))
+		get_stats(sum([LOSS_FUNCTION(self.forward_batch(links, receptors), y).item() for (receptors, y, _) in train_batches]))
 
 		for curr_epoch in range(num_epochs):
 			epoch_loss = 0
-			for (receptors, y) in train_batches:
+			for (receptors, y, _) in train_batches:
 				optimizer.zero_grad()
 				y_hat = self.forward_batch(links, receptors)
 				loss = LOSS_FUNCTION(y_hat, y)
@@ -160,8 +158,8 @@ class Model(torch.nn.Module):
 				print('Saved Model!')
 		
 		if make_graphs:
-			titles = iter(('Loss', 'Train Error', 'Val Error'))
-			for l in (losses, train_errors, val_errors):
+			titles = iter(('Loss', 'Val Error'))
+			for l in (losses, val_errors):
 				plt.plot(range(len(l)), l)
 				plt.title(next(titles))
 				plt.show()
@@ -169,7 +167,6 @@ class Model(torch.nn.Module):
 if __name__ == "__main__":
 	links_list = extract_list('data/link_data.csv', 'link')
 	receptors_list = extract_list('data/receptor_data.csv', 'receptor')
-
 	shuffle(links_list)
 	shuffle(receptors_list)
 
@@ -182,16 +179,17 @@ if __name__ == "__main__":
 			if (i + BATCH_SIZE <= len(unprepped)):
 				b = unprepped[i:i+BATCH_SIZE]
 				receptors = prep_receptors(b)
-				y = torch.Tensor([[r.pollution_concentration] for r in b]).to(DEVICE)
-				batches.append((receptors, y))
+				y = torch.Tensor([[r.pollution_concentration * r.nearest_link_distance] for r in b]).to(DEVICE)
+				nearest_link_distances = torch.Tensor([[r.nearest_link_distance] for r in b]).to(DEVICE)
+				batches.append((receptors, y, nearest_link_distances))
 		return batches
 
 	train_batches = make_batches(lambda i: (i % 5 < 3)) # 60%
 	val_batches = make_batches(lambda i: (i % 5 == 3)) # 20%
 
 	model = Model()
-	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.0001)
-	num_epochs = 10
+	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.001)
+	num_epochs = 30
 	save_location = 'model_save_' + strftime('%m-%d-%y %H:%M:%S')
 
 	model.train(
@@ -205,11 +203,9 @@ if __name__ == "__main__":
 	)
 
 	best_model, _ = Model.load(save_location)
-	(r, y) = val_batches[1]
+	(r, y, nld) = val_batches[1]
 	fwd = best_model.forward_batch(links, r)
 	for i in range(5):
-		print((fwd[i].item(), y[i].item()))
+		print((fwd[i].item()/nld[i].item(), y[i].item()/nld[i].item()))
 
 	print(best_model.get_error(links, r, y))
-
-# TODO: meteorological data, hyperparameters
