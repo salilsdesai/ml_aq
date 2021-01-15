@@ -10,7 +10,7 @@ if DEVICE != 'cuda':
 
 HIDDEN_SIZE = 8
 LOSS_FUNCTION = torch.nn.MSELoss()
-ERROR_FUNCTION = lambda y_hat, y: ((y_hat - y) / y).abs().mean() # Percent error
+ERROR_FUNCTION = lambda y_hat, y: ((y_hat - y) / y).abs().mean() # Relative error
 BATCH_SIZE = 1000
 
 # Used to load means and std devs for feature normilization
