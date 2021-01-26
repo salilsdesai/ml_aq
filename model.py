@@ -3,6 +3,9 @@ import pandas as pd
 from time import time, strftime, localtime
 from random import shuffle
 from matplotlib import pyplot as plt
+from matplotlib import patches
+from functools import reduce
+from operator import iconcat
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 if DEVICE != 'cuda':
@@ -67,6 +70,12 @@ def prep_receptors(receptors=None):
 	coords_dot = (coords * coords).sum(dim=1).unsqueeze(dim=-1)
 	subtract = torch.Tensor([[[r.elevation]] for r in receptors]).to(DEVICE)
 	return (coords, coords_dot, subtract)
+  
+def prep_batch(receptors):
+	prepped = prep_receptors(receptors)
+	y = torch.Tensor([[r.pollution_concentration * r.nearest_link_distance] for r in receptors]).to(DEVICE)
+	nearest_link_distances = torch.Tensor([[r.nearest_link_distance] for r in receptors]).to(DEVICE)
+	return (prepped, y, nearest_link_distances)
 
 class Model(torch.nn.Module):
 	def __init__(self):
@@ -170,6 +179,50 @@ class Model(torch.nn.Module):
 				plt.title(next(titles))
 				plt.show()
 
+	def graph_prediction_error(self, links, batches):
+		def predict_batch(batch):
+			"""
+			returns list of [(nearest link distance, coordinates, relative error)]
+			for each receptor in the batch
+			"""
+			(receptors, y, nld) = batch
+			fwd = self.forward_batch(links, receptors).detach()
+			return [(nld[i].item(), tuple(receptors[0][i].tolist()), ((fwd[i].item() - y[i].item())/y[i].item())) for i in range(receptors[0].shape[0])]
+
+		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
+		original_size = len(predictions)
+		predictions = [p for p in predictions if abs(p[2]) < 1000] # Remove outliers
+		print((str(100 * (original_size - len(predictions)) / len(predictions)) + "	 ")[:5] + "% of predictions removed as outliers")
+		predictions.sort(key=lambda prediction: prediction[0])
+
+		# Scatter plot
+		plt.scatter([p[0] for p in predictions], [p[2] for p in predictions], s=1)
+		plt.show()
+
+		# Map
+		plt.figure(figsize=(6,9))
+		most_extreme = round(reduce(lambda m, p: max(abs(p[2]), m), predictions, 0) * 100)/ 100
+
+		def get_color(p):
+			def scale(x, min, max):
+				return int(max - ((max - min) * (x / most_extreme)))
+			if (p[2] > 0): # From (125, 170, 255) -> (0, 89, 255)
+				nums = [scale(p[2], 0, 125), scale(p[2], 89, 170), 255]
+			else: # From (255, 125, 125) -> (255, 0, 0)
+				s = scale(-p[2], 0, 125)
+				nums = [255, s, s]
+			return reduce(lambda acc, n: acc + ('0' + hex(n)[2:])[-2:], nums, '#')
+		colors = [get_color(p) for p in predictions]
+		plt.scatter([p[1][0] for p in predictions], [p[1][1] for p in predictions], s=1, c=colors)
+
+		min_blue = patches.Patch(color='#7DABFF', label='+\u03B5')
+		max_blue = patches.Patch(color='#0059FF', label=('+' + str(most_extreme)))
+		min_red = patches.Patch(color='#FF7D7D', label='-\u03B5')
+		max_red = patches.Patch(color='#FF0000', label=('-' + str(most_extreme)))
+		plt.legend(handles=[min_blue, max_blue, min_red, max_red])
+
+		plt.show()
+
 if __name__ == "__main__":
 	links_list = extract_list('data/link_data.csv', 'link')
 	receptors_list = extract_list('data/receptor_data.csv', 'receptor')
@@ -180,14 +233,7 @@ if __name__ == "__main__":
 
 	def make_batches(condition):
 		unprepped = [receptors_list[i] for i in range(len(receptors_list)) if condition(i)]
-		batches = []
-		for i in range(0, len(unprepped), BATCH_SIZE):
-			if (i + BATCH_SIZE <= len(unprepped)):
-				b = unprepped[i:i+BATCH_SIZE]
-				receptors = prep_receptors(b)
-				y = torch.Tensor([[r.pollution_concentration * r.nearest_link_distance] for r in b]).to(DEVICE)
-				nearest_link_distances = torch.Tensor([[r.nearest_link_distance] for r in b]).to(DEVICE)
-				batches.append((receptors, y, nearest_link_distances))
+		batches = [prep_batch(unprepped[i:i+BATCH_SIZE]) for i in range(0, len(unprepped) - BATCH_SIZE, BATCH_SIZE)]
 		return batches
 
 	train_batches = make_batches(lambda i: (i % 5 < 3)) # 60%
@@ -195,8 +241,9 @@ if __name__ == "__main__":
 
 	model = Model()
 	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.001)
-	num_epochs = 30
+	num_epochs = 1000
 	save_location = 'model_save_' + strftime('%m-%d-%y %H:%M:%S')
+	print('Save Location: ' + save_location)
 
 	model.train(
 		optimizer, 
@@ -214,4 +261,5 @@ if __name__ == "__main__":
 	for i in range(5):
 		print((fwd[i].item()/nld[i].item(), y[i].item()/nld[i].item()))
 
-	print(best_model.get_error(links, r, y))
+	print(sum([best_model.get_error(links, receptors, y) for (receptors, y, _) in val_batches])/len(val_batches))
+	best_model.graph_prediction_error(links, val_batches)
