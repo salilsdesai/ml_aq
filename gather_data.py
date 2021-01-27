@@ -26,7 +26,7 @@ LINK_FIELDS = [
 	'Traffic Speed', 'Traffic Flow', 'Link Length',
 	'Fleet Mix Light', 'Fleet Mix Medium',
 	'Fleet Mix Heavy', 'Fleet Mix Commercial',
-	'Fleet Mix Bus',
+	'Fleet Mix Bus', 'Angle',
 ]
 RECEPTOR_FIELDS = [
 	'ID', 'X', 'Y', 'Elevation', 'Pollution Concentration', 'Nearest Link Distance'
@@ -206,6 +206,12 @@ def gather_link_data():
 					link[i + 10] += (curr_fleet_mix * length)
 					total_hours += length
 			link[i + 10] /= total_hours
+
+	df = pd.read_csv('data/ML_AQ/link_angle_jan19.csv')
+	for row in df.iterrows():
+		entry = row[1]
+		link = links[entry['ID']]
+		link[15] = float(entry['angle'])
 	
 	write_lists_to_csv('link', LINK_FIELDS, links)
 
