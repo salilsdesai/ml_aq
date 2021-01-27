@@ -3,9 +3,11 @@ import pandas as pd
 from time import time, strftime, localtime
 from random import shuffle
 from matplotlib import pyplot as plt
-from matplotlib import patches
+from matplotlib import patches, colors, ticker
 from functools import reduce
 from operator import iconcat
+from math import log, log10, exp
+import numpy as np
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 if DEVICE != 'cuda':
@@ -62,7 +64,7 @@ def prep_links(links=None):
 	] for link in links]]).to(DEVICE).repeat(BATCH_SIZE, 1, 1)
 	# If too much memory or need multiple batch sizes, move repeat to make_x (distances.shape[0])
 	return (coords, coords_dot, subtract, keep)
-  
+
 def prep_receptors(receptors=None):
 	if receptors is None:
 		receptors = extract_list('data/receptor_data.csv', 'receptor')
@@ -189,39 +191,70 @@ class Model(torch.nn.Module):
 			fwd = self.forward_batch(links, receptors).detach()
 			return [(nld[i].item(), tuple(receptors[0][i].tolist()), ((fwd[i].item() - y[i].item())/y[i].item())) for i in range(receptors[0].shape[0])]
 
-		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
+		predictions = reduce(iconcat, [predict_batch(batch) for batch in val_batches], [])
+
+		cutoff = 0.05
 		original_size = len(predictions)
-		predictions = [p for p in predictions if abs(p[2]) < 1000] # Remove outliers
-		print((str(100 * (original_size - len(predictions)) / len(predictions)) + "	 ")[:5] + "% of predictions removed as outliers")
-		predictions.sort(key=lambda prediction: prediction[0])
 
 		# Scatter plot
-		plt.scatter([p[0] for p in predictions], [p[2] for p in predictions], s=1)
+
+		# Remove upper ~5% of error predictions (absolute value) (outliers)
+		predictions.sort(key=lambda prediction: abs(prediction[2]))
+		predictions = [predictions[i] for i in range(int(original_size*(1-cutoff)))]
+		print('Upper ' + (str(100 * (original_size - len(predictions)) / len(predictions)) + "	 ")[:5] + "% of predictions removed as outliers before drawing plot")
+
+		predictions.sort(key=lambda prediction: prediction[0])
+		X = [p[0] for p in predictions]
+		Y = [p[2] for p in predictions]
+		plt.scatter(X, Y, s=1)
+		plt.show()
+		plt.yscale('symlog')
+		plt.scatter(X, Y, s=1)
 		plt.show()
 
 		# Map
+
+		# Remove upper and lower ~5% of error predictions (absolute value) (outliers)
+		predictions.sort(key=lambda prediction: abs(prediction[2]))
+		predictions = [predictions[i] for i in range(int(original_size*cutoff), len(predictions))]
+		print('Upper and lower combined ' + (str(100 * (original_size - len(predictions)) / len(predictions)) + "	 ")[:5] + "% of predictions removed as outliers before drawing map")
+
+		int(original_size*cutoff), 
+
+
 		plt.figure(figsize=(6,9))
-		most_extreme = round(reduce(lambda m, p: max(abs(p[2]), m), predictions, 0) * 100)/ 100
+		most_extreme, least_extreme = reduce(lambda m, p: (max(abs(p[2]), m[0]), min(abs(p[2]), m[1])), predictions, (0, 1000000))
 
-		def get_color(p):
-			def scale(x, min, max):
-				return int(max - ((max - min) * (x / most_extreme)))
-			if (p[2] > 0): # From (125, 170, 255) -> (0, 89, 255)
-				nums = [scale(p[2], 0, 125), scale(p[2], 89, 170), 255]
-			else: # From (255, 125, 125) -> (255, 0, 0)
-				s = scale(-p[2], 0, 125)
-				nums = [255, s, s]
-			return reduce(lambda acc, n: acc + ('0' + hex(n)[2:])[-2:], nums, '#')
-		colors = [get_color(p) for p in predictions]
-		plt.scatter([p[1][0] for p in predictions], [p[1][1] for p in predictions], s=1, c=colors)
+		transform = log
+		transform_inv = exp
 
-		min_blue = patches.Patch(color='#7DABFF', label='+\u03B5')
-		max_blue = patches.Patch(color='#0059FF', label=('+' + str(most_extreme)))
-		min_red = patches.Patch(color='#FF7D7D', label='-\u03B5')
-		max_red = patches.Patch(color='#FF0000', label=('-' + str(most_extreme)))
-		plt.legend(handles=[min_blue, max_blue, min_red, max_red])
+		max_transformed, min_transformed = transform(most_extreme), transform(least_extreme)
+
+		positive_light = np.asarray(colors.to_rgb('#E0ECFF'))
+		positive_dark = np.asarray(colors.to_rgb('#0064FF'))
+		negative_light = np.asarray(colors.to_rgb('#FFE0E0'))
+		negative_dark = np.asarray(colors.to_rgb('#FF0000'))
+
+
+		def get_color(x):
+			(sign, light, dark) = (1, positive_light, positive_dark) if x > 0 else (-1, negative_light, negative_dark)
+			proportion = (transform(sign * x) - min_transformed)/(max_transformed - min_transformed)
+			return ((1 - proportion) * light) + (proportion * dark)
+
+		plt.scatter([p[1][0] for p in predictions], [p[1][1] for p in predictions], s=1, c=[get_color(p[2]) for p in predictions])
 
 		plt.show()
+
+		# Gradient Key
+		n = 500
+		plt.xscale('symlog')
+		ax = plt.axes()
+		ax.set_xticks([-0.3, -1, -2, -4, -10, -int(most_extreme), 0.3, 1, 2, 4, 10, int(most_extreme)])
+		ax.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
+		for i in range(-n, n+1):
+			x = transform_inv(min_transformed + ((abs(i)/n) * (max_transformed - min_transformed))) * (1 if i > 0 else -1)
+			c = get_color(x)
+			ax.axvline(x, c=get_color(x), linewidth=4)
 
 if __name__ == "__main__":
 	links_list = extract_list('data/link_data.csv', 'link')
@@ -262,4 +295,5 @@ if __name__ == "__main__":
 		print((fwd[i].item()/nld[i].item(), y[i].item()/nld[i].item()))
 
 	print(sum([best_model.get_error(links, receptors, y) for (receptors, y, _) in val_batches])/len(val_batches))
+
 	best_model.graph_prediction_error(links, val_batches)
