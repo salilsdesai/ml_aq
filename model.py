@@ -8,15 +8,20 @@ from functools import reduce
 from operator import iconcat
 from math import log, log10, exp
 import numpy as np
+from requests import get
 
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 if DEVICE != 'cuda':
 	print('WARNING: Not using GPU')
 
 HIDDEN_SIZE = 8
-LOSS_FUNCTION = torch.nn.MSELoss()
-ERROR_FUNCTION = lambda y_hat, y: ((y_hat - y) / y).abs().mean() # Relative error
+LOSS_FUNCTION = lambda y_hat, y: (torch.max(y_hat, y) / torch.min(y_hat, y)).mean()
+ERROR_FUNCTION = LOSS_FUNCTION
+GRAPH_ERROR_FUNCTION = lambda y_hat, y: (y_hat / y) if (y_hat > y) else (-y / y_hat)
 BATCH_SIZE = 1000
+
+NOTEBOOK_NAME = 'model.py'
+DIRECTORY = '.'
 
 # Used to load means and std devs for feature normilization
 # Must be in the same order as the features in the tensor passed into the model
@@ -38,8 +43,8 @@ def load_feature_stats(filepath):
 		(feature_stats[0][i], feature_stats[1][i]) = (lambda f: (f.mean, f.std_dev))(feature_stats_dict[FEATURES[i]])
 	return feature_stats.to(DEVICE)
 
-FEATURE_STATS = load_feature_stats('data/feature_stats.csv')
-MET_DATA = {(int(row[1]['id'])):(type('MetStation', (object,), dict(row[1]))) for row in pd.read_csv('data/met_data.csv').iterrows()}
+FEATURE_STATS = load_feature_stats(DIRECTORY + '/data/feature_stats.csv')
+MET_DATA = {(int(row[1]['id'])):(type('MetStation', (object,), dict(row[1]))) for row in pd.read_csv(DIRECTORY + '/data/met_data.csv').iterrows()}
 
 def extract_list(filepath, class_name=''):
 	df = pd.read_csv(filepath)
@@ -47,7 +52,7 @@ def extract_list(filepath, class_name=''):
 
 def prep_links(links=None):
 	if links is None:
-		links = extract_list('data/link_data.csv', 'link')
+		links = extract_list(DIRECTORY + '/data/link_data.csv', 'link')
 	coords = torch.DoubleTensor([[l.x, l.y] for l in links]).T.to(DEVICE)
 	coords_dot = (coords * coords).sum(dim=0)
 	subtract = torch.Tensor([[l.elevation_mean] for l in links]).to(DEVICE)
@@ -67,7 +72,7 @@ def prep_links(links=None):
 
 def prep_receptors(receptors=None):
 	if receptors is None:
-		receptors = extract_list('data/receptor_data.csv', 'receptor')
+		receptors = extract_list(DIRECTORY + '/data/receptor_data.csv', 'receptor')
 	coords = torch.DoubleTensor([[r.x, r.y] for r in receptors]).to(DEVICE)
 	coords_dot = (coords * coords).sum(dim=1).unsqueeze(dim=-1)
 	subtract = torch.Tensor([[[r.elevation]] for r in receptors]).to(DEVICE)
@@ -90,7 +95,7 @@ class Model(torch.nn.Module):
 		s1 = self.layer_1(x)
 		a1 = self.activ(s1)
 		s2 = self.layer_2(a1)
-		return s2
+		return s2.abs()
 
 	@staticmethod
 	def make_x(links, receptors):
@@ -141,7 +146,6 @@ class Model(torch.nn.Module):
 		start_time = time()
 
 		losses = []
-		train_errors = [] 
 		val_errors = []
 
 		def get_stats(loss):
@@ -184,14 +188,14 @@ class Model(torch.nn.Module):
 	def graph_prediction_error(self, links, batches):
 		def predict_batch(batch):
 			"""
-			returns list of [(nearest link distance, coordinates, relative error)]
+			returns list of [(nearest link distance, coordinates, graph error)]
 			for each receptor in the batch
 			"""
 			(receptors, y, nld) = batch
 			fwd = self.forward_batch(links, receptors).detach()
-			return [(nld[i].item(), tuple(receptors[0][i].tolist()), ((fwd[i].item() - y[i].item())/y[i].item())) for i in range(receptors[0].shape[0])]
+			return [(nld[i].item(), tuple(receptors[0][i].tolist()), GRAPH_ERROR_FUNCTION(fwd[i].item(), y[i].item())) for i in range(receptors[0].shape[0])]
 
-		predictions = reduce(iconcat, [predict_batch(batch) for batch in val_batches], [])
+		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
 
 		cutoff = 0.05
 		original_size = len(predictions)
@@ -253,12 +257,31 @@ class Model(torch.nn.Module):
 		ax.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
 		for i in range(-n, n+1):
 			x = transform_inv(min_transformed + ((abs(i)/n) * (max_transformed - min_transformed))) * (1 if i > 0 else -1)
-			c = get_color(x)
 			ax.axvline(x, c=get_color(x), linewidth=4)
 
+	def export_predictions(self, links, batches, filepath):
+		def predict_batch(batch):
+			"""
+			returns list of [(x, y, prediction, actual, graph error)]
+			for each receptor in the batch
+			"""
+			(receptors, y, nld) = batch
+			fwd = self.forward_batch(links, receptors).detach()
+			coords = receptors[0][i].tolist()
+			return [(coords[0], coords[1], fwd[i].item(), y[i].item(), GRAPH_ERROR_FUNCTION(fwd[i].item(), y[i].item())) for i in range(receptors[0].shape[0])]
+		
+		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
+		
+		out_file = open(filepath, 'w')
+		format = lambda l: str(l).replace('\'', '').replace(', ', ',')[1:-1] + '\n'
+		out_file.write(format(['x', 'y', 'prediction', 'actual', 'error']))
+		for prediction in predictions:
+			out_file.write(format(prediction))
+		out_file.close()
+
 if __name__ == "__main__":
-	links_list = extract_list('data/link_data.csv', 'link')
-	receptors_list = extract_list('data/receptor_data.csv', 'receptor')
+	links_list = extract_list(DIRECTORY + '/data/link_data.csv', 'link')
+	receptors_list = extract_list(DIRECTORY + '/data/receptor_data.csv', 'receptor')
 	shuffle(links_list)
 	shuffle(receptors_list)
 
@@ -275,7 +298,7 @@ if __name__ == "__main__":
 	model = Model()
 	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.001)
 	num_epochs = 1000
-	save_location = 'model_save_' + strftime('%m-%d-%y %H:%M:%S')
+	save_location = DIRECTORY + '/Model Saves/model_save_' + strftime('%m-%d-%y %H:%M:%S') + ' ' + NOTEBOOK_NAME
 	print('Save Location: ' + save_location)
 
 	model.train(
