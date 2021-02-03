@@ -268,7 +268,7 @@ class Model(torch.nn.Module):
 			(receptors, y, nld) = batch
 			fwd = self.forward_batch(links, receptors).detach()
 			coords = receptors[0][i].tolist()
-			return [(coords[0], coords[1], fwd[i].item(), y[i].item(), GRAPH_ERROR_FUNCTION(fwd[i].item(), y[i].item())) for i in range(receptors[0].shape[0])]
+			return [(coords[0], coords[1], fwd[i].item()/nld[i].item(), y[i].item()/nld[i].item(), GRAPH_ERROR_FUNCTION(fwd[i].item(), y[i].item())) for i in range(receptors[0].shape[0])]
 		
 		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
 		
