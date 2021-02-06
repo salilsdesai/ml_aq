@@ -227,7 +227,6 @@ def gather_receptor_data():
 			receptor[1] = float(entry['x'])
 			receptor[2] = float(entry['y'])
 			receptor[4] = conc
-			receptor[5] = float(entry['NEAR_DIST'])
 			receptors[receptor[0]] = receptor
 	
 	df = pd.read_excel('data/ML_AQ/Receptors_ele_1.xlsx')
@@ -235,6 +234,11 @@ def gather_receptor_data():
 		entry = row[1]
 		if int(entry['Field1']) in receptors:
 			receptors[int(entry['Field1'])][3] = float(entry['Ezlevation (Meter)'])
+	
+	df = pd.read_csv('data/link_data.csv')
+	links = [(row[1]['x'], row[1]['y']) for row in df.iterrows()]
+	for receptor in receptors.values():
+		receptor[5] = min([((l[0] - receptor[1]) ** 2 + (l[1] - receptor[2]) ** 2) ** (0.5) for l in links])
 	
 	write_lists_to_csv('receptor', RECEPTOR_FIELDS, receptors)
 
