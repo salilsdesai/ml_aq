@@ -116,6 +116,17 @@ class Model(torch.nn.Module):
 		y_hat = self.forward_batch(links, receptors)
 		return ERROR_FUNCTION(y_hat, y).item()
 
+	def print_batch_errors(self, links, batches, err_funcs):
+		errors = [0] * len(err_funcs)
+		for (receptors, y, nld) in batches:
+			y_final = y / nld
+			y_hat_final = self.forward_batch(links, receptors) / nld
+			for i in range(len(err_funcs)):
+				errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
+		print('Final Errors:')
+		for i in range(len(err_funcs)):
+			print(err_funcs[i][0] + ': ' + str(errors[i]))
+
 	def save(self, filepath, optimizer=None):
 		torch.save({
 			'model_state_dict': self.state_dict(),
@@ -319,3 +330,13 @@ if __name__ == "__main__":
 	print(sum([best_model.get_error(links, receptors, y) for (receptors, y, _) in val_batches])/len(val_batches))
 
 	best_model.graph_prediction_error(links, val_batches)
+
+	mse = torch.nn.MSELoss()
+	err_funcs = [
+		('Mult Factor', lambda y_hat, y: (torch.max(y_hat, y) / torch.min(y_hat, y)).mean()),
+		('MSE', mse),
+		('MRE', lambda y_hat, y: ((y_hat - y) / y).abs().mean()),
+		('MAE', torch.nn.L1Loss()),
+		('RMSE', lambda y_hat, y: mse(y_hat, y).sqrt()),
+	]
+	best_model.print_batch_errors(links, val_batches, err_funcs)
