@@ -22,7 +22,7 @@ BATCH_SIZE = 1000
 
 LOSS_FUNCTION = lambda y_hat, y: MSE_SUM(y_hat, y)/2
 ERROR_FUNCTION = MRE
-GRAPH_ERROR_FUNCTION = lambda y_hat, y: (y_hat / y) if (y_hat > y) else (-y / y_hat)
+GRAPH_ERROR_FUNCTION = lambda y_hat, y: ((y_hat - y) / y) # Relative Error without absolute value
 
 TRANSFORM_OUTPUT = lambda y, nld: y
 TRANSFORM_OUTPUT_INV = lambda y, nld: y
@@ -257,14 +257,12 @@ class Model(torch.nn.Module):
 		predictions = [predictions[i] for i in range(int(original_size*cutoff), len(predictions))]
 		print('Upper and lower combined ' + (str(100 * (original_size - len(predictions)) / len(predictions)) + "	 ")[:5] + "% of predictions removed as outliers before drawing map")
 
-		int(original_size*cutoff), 
-
-
 		plt.figure(figsize=(6,9))
 		most_extreme, least_extreme = reduce(lambda m, p: (max(abs(p[2]), m[0]), min(abs(p[2]), m[1])), predictions, (0, 1000000))
 
-		transform = log
-		transform_inv = exp
+		# These do nothing for now, but potentially use log and exp respectively if errors not distributed well over color range
+		transform = lambda x: x
+		transform_inv = lambda x: x
 
 		max_transformed, min_transformed = transform(most_extreme), transform(least_extreme)
 
@@ -287,7 +285,10 @@ class Model(torch.nn.Module):
 		n = 500
 		plt.xscale('symlog')
 		ax = plt.axes()
-		ax.set_xticks([-0.3, -1, -2, -4, -10, -int(most_extreme), 0.3, 1, 2, 4, 10, int(most_extreme)])
+
+		r = lambda x: round(x * 100) / 100  # Round x to the hundredths place
+
+		ax.set_xticks([-r(most_extreme/3), -r(most_extreme*2/3), -r(most_extreme), r(most_extreme/3), r(most_extreme*2/3), r(most_extreme), 0])
 		ax.get_xaxis().set_major_formatter(ticker.ScalarFormatter())
 		for i in range(-n, n+1):
 			x = transform_inv(min_transformed + ((abs(i)/n) * (max_transformed - min_transformed))) * (1 if i > 0 else -1)
