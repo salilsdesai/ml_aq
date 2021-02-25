@@ -14,11 +14,22 @@ DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 if DEVICE != 'cuda':
 	print('WARNING: Not using GPU')
 
+MSE_SUM = torch.nn.MSELoss(reduction='sum')
+MRE = lambda y_hat, y: ((y_hat - y) / y).abs().mean()
+
 HIDDEN_SIZE = 8
-LOSS_FUNCTION = lambda y_hat, y: (torch.max(y_hat, y) / torch.min(y_hat, y)).mean()
-ERROR_FUNCTION = LOSS_FUNCTION
-GRAPH_ERROR_FUNCTION = lambda y_hat, y: (y_hat / y) if (y_hat > y) else (-y / y_hat)
 BATCH_SIZE = 1000
+
+LOSS_FUNCTION = lambda y_hat, y: MSE_SUM(y_hat, y)/2
+ERROR_FUNCTION = MRE
+GRAPH_ERROR_FUNCTION = lambda y_hat, y: (y_hat / y) if (y_hat > y) else (-y / y_hat)
+
+TRANSFORM_OUTPUT = lambda y, nld: y * (nld ** 0.5)
+TRANSFORM_OUTPUT_INV = lambda y, nld: y / (nld ** 0.5)
+
+CONCENTRATION_THRESHOLD = 0.01
+DISTANCE_THRESHOLD = 500
+LEARNING_RATE = 0.001
 
 NOTEBOOK_NAME = 'model.py'
 DIRECTORY = '.'
@@ -80,7 +91,7 @@ def prep_receptors(receptors=None):
   
 def prep_batch(receptors):
 	prepped = prep_receptors(receptors)
-	y = torch.Tensor([[r.pollution_concentration * r.nearest_link_distance] for r in receptors]).to(DEVICE)
+	y = torch.Tensor([[TRANSFORM_OUTPUT(r.pollution_concentration, r.nearest_link_distance)] for r in receptors]).to(DEVICE)
 	nearest_link_distances = torch.Tensor([[r.nearest_link_distance] for r in receptors]).to(DEVICE)
 	return (prepped, y, nearest_link_distances)
 
@@ -99,15 +110,17 @@ class Model(torch.nn.Module):
 
 	@staticmethod
 	def make_x(links, receptors):
-		distances = (links[1] - (2 * (receptors[0] @ links[0])) + receptors[1]).sqrt().reciprocal().unsqueeze(dim=2).type(torch.Tensor).to(DEVICE)
+		distances_inv = (links[1] - (2 * (receptors[0] @ links[0])) + receptors[1]).sqrt().reciprocal().unsqueeze(dim=2).type(torch.Tensor).to(DEVICE)
 		subtracted = links[2] - receptors[2]
 		kept = links[3]
-		cat = torch.cat((distances, subtracted, kept), dim=-1)
+		cat = torch.cat((distances_inv, subtracted, kept), dim=-1)
 		normalized = (cat - FEATURE_STATS[0])/FEATURE_STATS[1]
-		return normalized
+		filter = distances_inv > (1/DISTANCE_THRESHOLD)
+		return (normalized, filter)
 
 	def forward_batch(self, links, receptors):
-		return self.forward(Model.make_x(links, receptors)).sum(dim=1)
+		(x, filter) = Model.make_x(links, receptors)
+		return (self.forward(x) * filter).sum(dim=1)
 
 	def get_error(self, links, receptors, y):
 		"""
@@ -116,11 +129,18 @@ class Model(torch.nn.Module):
 		y_hat = self.forward_batch(links, receptors)
 		return ERROR_FUNCTION(y_hat, y).item()
 
-	def print_batch_errors(self, links, batches, err_funcs):
+	def print_batch_errors(self, links, batches):
+		err_funcs = [
+			('Mult Factor', lambda y_hat, y: (torch.max(y_hat, y) / torch.min(y_hat, y)).mean()),
+			('MSE', torch.nn.MSELoss()),
+			('MRE', MRE),
+			('MAE', torch.nn.L1Loss()),
+		]
+
 		errors = [0] * len(err_funcs)
 		for (receptors, y, nld) in batches:
-			y_final = y / nld
-			y_hat_final = self.forward_batch(links, receptors) / nld
+			y_final = TRANSFORM_OUTPUT_INV(y, nld)
+			y_hat_final = TRANSFORM_OUTPUT_INV(self.forward_batch(links, receptors), nld)
 			for i in range(len(err_funcs)):
 				errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
 		print('Final Errors:')
@@ -166,6 +186,9 @@ class Model(torch.nn.Module):
 			print('Val Error: ' + str(val_errors[-1]))
 
 		get_stats(sum([LOSS_FUNCTION(self.forward_batch(links, receptors), y).item() for (receptors, y, _) in train_batches]))
+		
+		self.save(save_location, optimizer)
+		print('Saved Model!')
 
 		curr_epoch = 0
 		stop_training = False
@@ -204,7 +227,7 @@ class Model(torch.nn.Module):
 			"""
 			(receptors, y, nld) = batch
 			fwd = self.forward_batch(links, receptors).detach()
-			return [(nld[i].item(), tuple(receptors[0][i].tolist()), GRAPH_ERROR_FUNCTION(fwd[i].item(), y[i].item())) for i in range(receptors[0].shape[0])]
+			return [(nld[i].item(), tuple(receptors[0][i].tolist()), GRAPH_ERROR_FUNCTION(TRANSFORM_OUTPUT_INV(fwd[i].item(), nld[i].item()), TRANSFORM_OUTPUT_INV(y[i].item(), nld[i].item()))) for i in range(receptors[0].shape[0])]
 
 		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
 
@@ -278,7 +301,11 @@ class Model(torch.nn.Module):
 			"""
 			(receptors, y, nld) = batch
 			fwd = self.forward_batch(links, receptors).detach()
-			return [(receptors[0][i][0].item(), receptors[0][i][1].item(), fwd[i].item()/nld[i].item(), y[i].item()/nld[i].item(), GRAPH_ERROR_FUNCTION(fwd[i].item(), y[i].item())) for i in range(receptors[0].shape[0])]
+			def make_tuple(i):
+				prediction = TRANSFORM_OUTPUT_INV(fwd[i].item(), nld[i].item())
+				actual = TRANSFORM_OUTPUT_INV(y[i].item(), nld[i].item())
+				return (receptors[0][i][0].item(), receptors[0][i][1].item(), prediction, actual, GRAPH_ERROR_FUNCTION(prediction, actual))
+			return [make_tuple(i) for i in range(receptors[0].shape[0])]
 		
 		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
 		
@@ -291,7 +318,7 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
 	links_list = extract_list(DIRECTORY + '/data/link_data.csv', 'link')
-	receptors_list = extract_list(DIRECTORY + '/data/receptor_data.csv', 'receptor')
+	receptors_list = [r for r in extract_list(DIRECTORY + '/data/receptor_data.csv', 'receptor') if (r.nearest_link_distance <= DISTANCE_THRESHOLD and r.pollution_concentration >= CONCENTRATION_THRESHOLD)]
 	shuffle(links_list)
 	shuffle(receptors_list)
 
@@ -306,7 +333,7 @@ if __name__ == "__main__":
 	val_batches = make_batches(lambda i: (i % 5 == 3)) # 20%
 
 	model = Model()
-	optimizer = torch.optim.AdamW(model.parameters(), lr = 0.001)
+	optimizer = torch.optim.AdamW(model.parameters(), lr = LEARNING_RATE)
 	num_epochs = 1000
 	save_location = DIRECTORY + '/Model Saves/model_save_' + strftime('%m-%d-%y %H:%M:%S') + ' ' + NOTEBOOK_NAME
 	print('Save Location: ' + save_location)
@@ -325,18 +352,12 @@ if __name__ == "__main__":
 	(r, y, nld) = val_batches[1]
 	fwd = best_model.forward_batch(links, r)
 	for i in range(5):
-		print((fwd[i].item()/nld[i].item(), y[i].item()/nld[i].item()))
+		print((TRANSFORM_OUTPUT_INV(fwd[i].item(), nld[i].item()), TRANSFORM_OUTPUT_INV(y[i].item(), nld[i].item())))
 
 	print(sum([best_model.get_error(links, receptors, y) for (receptors, y, _) in val_batches])/len(val_batches))
 
 	best_model.graph_prediction_error(links, val_batches)
 
-	mse = torch.nn.MSELoss()
-	err_funcs = [
-		('Mult Factor', lambda y_hat, y: (torch.max(y_hat, y) / torch.min(y_hat, y)).mean()),
-		('MSE', mse),
-		('MRE', lambda y_hat, y: ((y_hat - y) / y).abs().mean()),
-		('MAE', torch.nn.L1Loss()),
-		('RMSE', lambda y_hat, y: mse(y_hat, y).sqrt()),
-	]
-	best_model.print_batch_errors(links, val_batches, err_funcs)
+	best_model.export_predictions(links, val_batches, save_location[save_location.rindex('model_save_') + 11:save_location.rindex('.')] + ' Predictions.csv')
+
+	best_model.print_batch_errors(links, val_batches)
