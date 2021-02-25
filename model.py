@@ -24,8 +24,8 @@ LOSS_FUNCTION = lambda y_hat, y: MSE_SUM(y_hat, y)/2
 ERROR_FUNCTION = MRE
 GRAPH_ERROR_FUNCTION = lambda y_hat, y: (y_hat / y) if (y_hat > y) else (-y / y_hat)
 
-TRANSFORM_OUTPUT = lambda y, nld: y * (nld ** 0.5)
-TRANSFORM_OUTPUT_INV = lambda y, nld: y / (nld ** 0.5)
+TRANSFORM_OUTPUT = lambda y, nld: y
+TRANSFORM_OUTPUT_INV = lambda y, nld: y
 
 CONCENTRATION_THRESHOLD = 0.01
 DISTANCE_THRESHOLD = 500
