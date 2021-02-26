@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from model import extract_list
+from math import pi, sin
 
 # Stats Recorder Class by Matt Hancock (http://notmatthancock.github.io/2017/03/23/simple-batch-stat-updates.html)
 class StatsRecorder:
@@ -72,6 +73,7 @@ def get_feature_stats():
             ('vmt_times_fleet_mix_heavy', lambda link: vmt(link) * link.fleet_mix_heavy),
             ('vmt_times_fleet_mix_commercial', lambda link: vmt(link) * link.fleet_mix_commercial),
             ('vmt_times_fleet_mix_bus', lambda link: vmt(link) * link.fleet_mix_bus),
+            ('up_down_wind_effect', lambda link: abs(sin((met_data[link.nearest_met_station_id].wind_direction - link.angle) * pi / 180))),
         ],
         [
             'traffic_speed', 'fleet_mix_light', 'fleet_mix_medium',
