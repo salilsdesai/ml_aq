@@ -250,6 +250,25 @@ class Model(torch.nn.Module):
 		plt.scatter(X, Y, s=1)
 		plt.show()
 
+		# Plot average error across bins of NLD
+		
+		bin_size = 5
+		predictions.sort(key=lambda prediction: prediction[0])
+
+		# (Total error, receptor count) for each bin
+		bins = [[0, 0] for _ in range(int(predictions[-1][0] / bin_size) + 1)]
+
+		for p in predictions:
+			i = int(p[0] / bin_size)
+			bins[i][0] += p[2]
+			bins[i][1] += 1
+		
+		non_empty_i = [i for i in range(len(bins)) if bins[i][1] > 0]
+		X = [bin_size * i for i in non_empty_i]
+		Y = [bins[i][0]/bins[i][1] for i in non_empty_i]
+		plt.title('Average Error vs Nearest Link Distance')
+		plt.plot(X, Y)
+
 		# Map
 
 		# Remove upper and lower ~5% of error predictions (absolute value) (outliers)
