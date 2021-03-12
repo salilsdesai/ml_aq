@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from matplotlib import patches, colors, ticker
 from functools import reduce
 from operator import iconcat
-from math import log, log10, exp
+from math import log, log10, exp, sin, pi
 import numpy as np
 from requests import get
 
@@ -17,6 +17,8 @@ if DEVICE != 'cuda':
 MSE_SUM = torch.nn.MSELoss(reduction='sum')
 MRE = lambda y_hat, y: ((y_hat - y) / y).abs().mean()
 
+A, B = (0.8, 0.10297473583824722)
+
 HIDDEN_SIZE = 8
 BATCH_SIZE = 1000
 
@@ -24,12 +26,12 @@ LOSS_FUNCTION = lambda y_hat, y: MSE_SUM(y_hat, y)/2
 ERROR_FUNCTION = MRE
 GRAPH_ERROR_FUNCTION = lambda y_hat, y: ((y_hat - y) / y) # Relative Error without absolute value
 
-TRANSFORM_OUTPUT = lambda y, nld: y
-TRANSFORM_OUTPUT_INV = lambda y, nld: y
+TRANSFORM_OUTPUT = lambda y, nld: y * (np.exp(B * (nld ** 0.5)) / A)
+TRANSFORM_OUTPUT_INV = lambda y, nld: y / (np.exp(B * (nld ** 0.5)) / A)
 
 CONCENTRATION_THRESHOLD = 0.01
 DISTANCE_THRESHOLD = 500
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0001
 
 NOTEBOOK_NAME = 'model.py'
 DIRECTORY = '.'
@@ -40,6 +42,7 @@ FEATURES = [
 	'distance_inverse', 'elevation_difference', 'vmt', 'traffic_speed', 
 	'fleet_mix_light', 'fleet_mix_medium', 'fleet_mix_heavy', 
 	'fleet_mix_commercial', 'fleet_mix_bus', 'wind_direction', 'wind_speed',
+	'up_down_wind_effect',
 ]
 INPUT_SIZE = len(FEATURES)
 
@@ -77,6 +80,7 @@ def prep_links(links=None):
 		link.fleet_mix_bus,
 		MET_DATA[link.nearest_met_station_id].wind_direction,
 		MET_DATA[link.nearest_met_station_id].wind_speed,
+		abs(sin((MET_DATA[link.nearest_met_station_id].wind_direction - link.angle) * pi / 180)),
 	] for link in links]]).to(DEVICE).repeat(BATCH_SIZE, 1, 1)
 	# If too much memory or need multiple batch sizes, move repeat to make_x (distances.shape[0])
 	return (coords, coords_dot, subtract, keep)
@@ -139,8 +143,9 @@ class Model(torch.nn.Module):
 
 		errors = [0] * len(err_funcs)
 		for (receptors, y, nld) in batches:
-			y_final = TRANSFORM_OUTPUT_INV(y, nld)
-			y_hat_final = TRANSFORM_OUTPUT_INV(self.forward_batch(links, receptors), nld)
+			nld_cpu = nld.cpu()
+			y_final = TRANSFORM_OUTPUT_INV(y.cpu(), nld_cpu)
+			y_hat_final = TRANSFORM_OUTPUT_INV(self.forward_batch(links, receptors).cpu(), nld_cpu)
 			for i in range(len(err_funcs)):
 				errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
 		print('Final Errors:')
