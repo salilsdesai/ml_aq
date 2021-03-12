@@ -1,6 +1,7 @@
 import pandas as pd
 from math import isnan
 from simpledbf import Dbf5
+from model import extract_list
 
 SNAKE_CASE = lambda s: s.lower().replace(' ', '_')
 MET_STATIONS = ['NYC', 'LGA', 'JFK']
@@ -241,6 +242,34 @@ def gather_receptor_data():
 		receptor[5] = min([((l[0] - receptor[1]) ** 2 + (l[1] - receptor[2]) ** 2) ** (0.5) for l in links])
 	
 	write_lists_to_csv('receptor', RECEPTOR_FIELDS, receptors)
+
+def gather_link_population_densities():
+	# 563312.4167, 4483978.488 → 40.499955, -74.253425
+	# 596926.7968, 4528977.4090 → 40.905391, -73.847027
+	LON = lambda x: 0.000012090004301462486 * x - 81.06387454097022
+	LAT = lambda y: 0.000009009904926387032 * y + 0.0997351311553274
+
+	links = extract_list('data/link_data.csv', 'Link')
+	pop = extract_list('data/ML_AQ/ny_population_data.csv', 'PopulationData')
+	latlon = extract_list('data/ML_AQ/ny_lat_lon.csv', 'LatLon')
+
+	for l in links:
+		closest = None
+		closest_dist = None
+		lat = LAT(l.y)
+		lon = LON(l.x)
+		for ll in latlon:
+			dist = (((ll.lat - lat) ** 2) + ((ll.lon - lon) ** 2)) ** 0.5
+			if (closest_dist is None or dist < closest_dist):
+				closest_dist = dist
+				closest = ll
+		l.zipcode = closest.zipcode
+		
+	pop_density_map = {p.zipcode:getattr(p, 'population density (per sq mile)') for p in pop}
+	for l in links:
+		l.population_density = pop_density_map[l.zipcode]
+
+	write_lists_to_csv('link_population_density', ['id', 'population_density'], {l: [l.id, l.population_density] for l in links})
 
 
 if __name__ == "__main__":
