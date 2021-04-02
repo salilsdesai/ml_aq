@@ -155,7 +155,7 @@ def gather_link_data():
 	for (id, all_elevations) in elevations.items():
 		links[id][6] = sum(all_elevations)/len(all_elevations)
 
-	links[246543][6] = 0  # TODO: Remove once we have 246543's elevation
+	links[246543][6] = 0	# TODO: Remove once we have 246543's elevation
 	
 	# Get Length, Speed, Flow
 	df = pd.read_csv('data/ML_AQ/Base File.csv')
@@ -271,6 +271,132 @@ def gather_link_population_densities():
 
 	write_lists_to_csv('link_population_density', ['id', 'population_density'], {l: [l.id, l.population_density] for l in links})
 
+def gather_link_data_temporal():
+	DIRECTORY = ''
+
+	times_of_day = [('Morning', 4), ('Midday', 6), ('PM', 4), ('ND', 10)]
+
+	hour_periods = []
+	for _ in range(6):
+		hour_periods.append(3)
+	for _ in range(4):
+		hour_periods.append(0)
+	for _ in range(6):
+		hour_periods.append(1)
+	for _ in range(4):
+		hour_periods.append(2)
+	for _ in range(4):
+		hour_periods.append(3)
+
+
+	links = {}
+
+	df = pd.read_csv(DIRECTORY + 'data/ML_AQ/Met_1_1.csv')
+	for row in df.iterrows():
+		entry = row[1]
+		id = int(entry['ID'])
+		link = [[None for _ in range(7)] for _ in range(4)]
+		links[id] = link
+
+	df = pd.read_csv(DIRECTORY + 'data/ML_AQ/Base File.csv')
+
+	# Get Length, Speed, Flow
+	base_data = {}
+	for row in df.iterrows():
+		entry = row[1]
+		id = int(entry['LinkID'])
+		period = hour_periods[int(entry['HourID']) - 1]	# indexed by 1 for some reason
+		if id in links:
+			if id in base_data and period in base_data[id]:
+				data = base_data[id][period]
+			else:
+				if id not in base_data:
+					base_data[id] = {}
+				data = ([], [])
+				base_data[id][period] = data
+			l = data[0] if int(entry['DirectionID']) == -1 else data[1]
+			l.append((float(entry['Speed']), float(entry['Flow'])))
+
+	for (id, data) in base_data.items():
+		for period in range(4):
+			if period in base_data[id]:
+				data = base_data[id][period]
+				link = links[id][period]
+				# Get the average speed and flow for each direction
+				speeds_and_flows = [[0, 0], [0, 0]]
+				for i in [0, 1]:
+					for entry in data[i]:
+						for j in [0, 1]:
+							speeds_and_flows[i][j] += (entry[j] / len(data[i]))
+
+				# Speed is weighted average of average speeds in both directions (weighted by flow)
+				link[0] = \
+					(speeds_and_flows[0][0] * speeds_and_flows[0][1] + speeds_and_flows[1][0] * speeds_and_flows[1][1]) / \
+					(speeds_and_flows[0][1] + speeds_and_flows[1][1]) 
+
+				# Flow is sum of average flow in both directions
+				link[1] = speeds_and_flows[0][1] + speeds_and_flows[1][1]
+
+	df = pd.read_excel(DIRECTORY + 'data/ML_AQ/fleet_share.xlsx')
+
+	# Get Fleet Mix
+	vehicle_types = ['Light', 'Medium', 'Heavy', 'Commercial', 'Bus']
+	times_of_day = [('Morning', 4), ('Midday', 6), ('PM', 4), ('ND', 10)]
+
+	for row in df.iterrows():
+		entry = row[1]
+		link = links[entry['ID']]
+		for j in range(len(times_of_day)):
+			(time, _) = times_of_day[j]
+			for i in range(len(vehicle_types)):
+				curr_fleet_mix = entry[time + '_' + vehicle_types[i] + '_%']
+				if isnan(curr_fleet_mix):
+					curr_fleet_mix = 0
+				link[j][2 + i] = (curr_fleet_mix)
+
+	# Replace Nones with ones from before
+	num_replace = 0
+	for link in links.values():
+		for i in range(len(link)):
+			for j in range(len(link[i])):
+				if link[i][j] is None:
+					# Need to replace
+					k = i - 1
+					if k < 0:
+						k = len(link) - 1
+					while link[k][j] is None and k != i:
+						k = k - 1
+						if k < 0:
+							k = len(link) - 1
+					if k == i:
+						print('FAILED: ' + str((i, j)))
+					else:
+						link[i][j] = link[k][j]
+						num_replace += 1
+	print(num_replace)
+
+	headers = ['traffic_speed', 'traffic_flow']
+	for s in vehicle_types:
+		headers.append('fleet_mix_' + s.lower())
+
+	csv_headers = ['id']
+	for (t, _) in times_of_day:
+		for h in headers:
+			csv_headers.append(h + '_' + t.lower())
+
+	def list_to_csv_line(l):
+		return str(l).replace(' ', '').replace("'", '')[1:-1] + '\n'
+
+	f = open('link_data_temporal.csv', 'w')
+	f.write(list_to_csv_line(csv_headers))
+	for (id, l) in links.items():
+		data = [id]
+		for t in l:
+			for q in t:
+				data.append(q)
+		f.write(list_to_csv_line(data))
+	f.close()
+		
 
 if __name__ == "__main__":
 	gather_receptor_data()
