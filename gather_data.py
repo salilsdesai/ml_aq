@@ -271,8 +271,11 @@ def gather_link_population_densities():
 
 	write_lists_to_csv('link_population_density', ['id', 'population_density'], {l: [l.id, l.population_density] for l in links})
 
-def gather_link_data_temporal():
+def gather_temporal_data():
 	DIRECTORY = ''
+
+	def list_to_csv_line(l):
+		return str(l).replace(' ', '').replace("'", '')[1:-1] + '\n'
 
 	times_of_day = [('Morning', 4), ('Midday', 6), ('PM', 4), ('ND', 10)]
 
@@ -288,7 +291,7 @@ def gather_link_data_temporal():
 	for _ in range(4):
 		hour_periods.append(3)
 
-
+	# Link Data
 	links = {}
 
 	df = pd.read_csv(DIRECTORY + 'data/ML_AQ/Met_1_1.csv')
@@ -341,7 +344,6 @@ def gather_link_data_temporal():
 
 	# Get Fleet Mix
 	vehicle_types = ['Light', 'Medium', 'Heavy', 'Commercial', 'Bus']
-	times_of_day = [('Morning', 4), ('Midday', 6), ('PM', 4), ('ND', 10)]
 
 	for row in df.iterrows():
 		entry = row[1]
@@ -384,9 +386,6 @@ def gather_link_data_temporal():
 		for h in headers:
 			csv_headers.append(h + '_' + t.lower())
 
-	def list_to_csv_line(l):
-		return str(l).replace(' ', '').replace("'", '')[1:-1] + '\n'
-
 	f = open('link_data_temporal.csv', 'w')
 	f.write(list_to_csv_line(csv_headers))
 	for (id, l) in links.items():
@@ -394,6 +393,48 @@ def gather_link_data_temporal():
 		for t in l:
 			for q in t:
 				data.append(q)
+		f.write(list_to_csv_line(data))
+	f.close()
+
+	# Met Data
+	directions = []
+	speeds = []
+	stations = [(2, 'nyc'), (3, 'jfk'), (4, 'lga')]
+	for (id, name) in stations:
+		d = [[0, 0] for _ in range(4)]
+		s = [[0, 0] for _ in range(4)]
+		df = pd.read_csv(DIRECTORY + 'data/met_data_' + name + '.csv')
+		for row in df.iterrows():
+			entry = row[1]
+			dir = int(entry['wind_direction'])
+			spd = float(entry['wind_speed'])
+			period = hour_periods[int(entry['hour']) - 1]
+			if dir != 999:
+				d[period][0] += dir
+				d[period][1] += 1
+			if spd != 999:
+				s[period][0] += spd
+				s[period][1] += 1
+				
+		directions.append([d[i][0]/d[i][1] if d[i][1] != 0 else 0 for i in range(4)])
+		speeds.append([s[i][0]/s[i][1] if s[i][1] != 0 else 0 for i in range(4)])
+
+	headers = ['wind_direction', 'wind_speed']
+
+	csv_headers = ['id', 'name']
+	for (t, _) in times_of_day:
+		for h in headers:
+			csv_headers.append(h + '_' + t.lower())
+
+	f = open('met_data_temporal.csv', 'w')
+	f.write(list_to_csv_line(csv_headers))
+	for i in range(len(stations)):
+		id = stations[i][0]
+		name = stations[i][1]
+		data = [id, name]
+		for j in range(4):
+			data.append(directions[i][j])
+			data.append(speeds[i][j])
 		f.write(list_to_csv_line(data))
 	f.close()
 		
