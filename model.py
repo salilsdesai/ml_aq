@@ -1,159 +1,132 @@
-import torch
-import pandas as pd
-from time import time, strftime, localtime
-from random import shuffle
-from matplotlib import pyplot as plt
-from matplotlib import patches, colors, ticker
-from functools import reduce
-from operator import iconcat
-from math import log, log10, exp, sin, pi
 import numpy as np
-from requests import get
+import torch
 
-DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
-if DEVICE != 'cuda':
-	print('WARNING: Not using GPU')
+from functools import reduce
+from matplotlib import pyplot as plt
+from matplotlib import colors, ticker
+from operator import iconcat
+from time import time, strftime, localtime
+from torch import Tensor
+from torch.optim import Optimizer
+from torch.types import Number
+from typing import Callable, List, Tuple, Optional, Dict, Any, TypeVar, Generic
 
-MSE_SUM = torch.nn.MSELoss(reduction='sum')
-MRE = lambda y_hat, y: ((y_hat - y) / y).abs().mean()
+from .utils import MetStation, mre, loss_function, error_function, Value, \
+	graph_error_function, mult_factor_error, Link, Receptor, Coordinate
 
-A, B = (0.8, 0.10297473583824722)
+ReceptorData = TypeVar('ReceptorData')
+LinkData = TypeVar('LinkData')
 
-HIDDEN_SIZE = 8
-BATCH_SIZE = 1000
+class ReceptorBatch(Generic[ReceptorData]):
+	def __init__(
+		self, 
+		receptors: ReceptorData, 
+		y: Tensor, 
+		nearest_link_distances: Tensor
+	):
+		self.receptors: ReceptorData = receptors
+		self.y: Tensor = y
+		self.nearest_link_distances: Tensor = nearest_link_distances
+	
+	def coordinate(self, i: int) -> Coordinate:
+		"""
+		returns the coordinates of the receptor at index i in the batch
+		"""
+		raise NotImplementedError
 
-LOSS_FUNCTION = lambda y_hat, y: MSE_SUM(y_hat, y)/2
-ERROR_FUNCTION = MRE
-GRAPH_ERROR_FUNCTION = lambda y_hat, y: ((y_hat - y) / y) # Relative Error without absolute value
+	def size(self) -> int:
+		raise NotImplementedError
 
-TRANSFORM_OUTPUT = lambda y, nld: y * (np.exp(B * (nld ** 0.5)) / A)
-TRANSFORM_OUTPUT_INV = lambda y, nld: y / (np.exp(B * (nld ** 0.5)) / A)
 
-CONCENTRATION_THRESHOLD = 0.01
-DISTANCE_THRESHOLD = 500
-LEARNING_RATE = 0.0001
+class ModelParams():
+	def __init__(
+		self,
+		hidden_size: int,
+		batch_size: int,
+		transform_output_src: str,
+		transform_output_inv_src: str,
+		concentration_threshold: float,
+		distance_threshold: float,
+		link_features: List[str]
+	):
+		self.hidden_size: int = hidden_size
+		self.batch_size: int = batch_size
+		self.transform_output_src: str = transform_output_src
+		transform_output: Callable[[Value, Value], Value] = eval(transform_output_src)
+		self.transform_output: Callable[[Value, Value], Value] = transform_output
+		self.transform_output_inv_src: str = transform_output_inv_src
+		transform_output_inv: Callable[[Value, Value], Value] = eval(transform_output_inv_src)
+		self.transform_output_inv: Callable[[Value, Value], Value] = transform_output_inv
+		self.concentration_threshold = concentration_threshold
+		self.distance_threshold = distance_threshold
+		self.link_features = link_features
+	
+	def as_dict(self) -> Dict[str, Any]:
+		d = {
+			'hidden_size': self.hidden_size,
+			'batch_size': self.batch_size,
+			'transform_output_src': self.transform_output_src,
+			'transform_output_inv_src': self.transform_output_inv_src,
+			'concentration_threshold': self.concentration_threshold,
+			'distance_threshold': self.distance_threshold,
+			'link_features': self.link_features
+		}
+		d.update(self.child_dict())
+		return d
 
-NOTEBOOK_NAME = 'model.py'
-DIRECTORY = '.'
+	def child_dict(self) -> Dict[str, Any]:
+		raise NotImplementedError
 
-# Used to load means and std devs for feature normilization
-# Must be in the same order as the features in the tensor passed into the model
-FEATURES = [
-	'distance_inverse', 'elevation_difference', 'vmt', 'traffic_speed', 
-	'fleet_mix_light', 'fleet_mix_medium', 'fleet_mix_heavy', 
-	'fleet_mix_commercial', 'fleet_mix_bus', 'wind_direction', 'wind_speed',
-	'up_down_wind_effect',
-]
-INPUT_SIZE = len(FEATURES)
 
-def load_feature_stats(filepath):
-	"""
-	Load the mean and std dev of each feature from a file
-	Used to normalize data
-	"""
-	feature_stats_dict = {(row[1]['feature']):(type('FeatureStats', (object,), dict(row[1]))) for row in pd.read_csv(filepath).iterrows()}
-	feature_stats = torch.Tensor(2, INPUT_SIZE)
-	for i in range(INPUT_SIZE):
-		(feature_stats[0][i], feature_stats[1][i]) = (lambda f: (f.mean, f.std_dev))(feature_stats_dict[FEATURES[i]])
-	return feature_stats.to(DEVICE)
+class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
+	def __init__(self, params: ModelParams):	
+		super(Model, self).__init__()
+		self.link_data: Optional[LinkData] = None
+		self.params = params
+	
+	def filter_receptors(self, receptors: List[Receptor]) -> List[Receptor]:
+		return [r for r in receptors if (r.nearest_link_distance <= self.params.distance_threshold and r.pollution_concentration >= self.params.concentration_threshold)]
+	
+	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> ReceptorBatch:
+		raise NotImplementedError 
 
-FEATURE_STATS = load_feature_stats(DIRECTORY + '/data/feature_stats.csv')
-MET_DATA = {(int(row[1]['id'])):(type('MetStation', (object,), dict(row[1]))) for row in pd.read_csv(DIRECTORY + '/data/met_data.csv').iterrows()}
+	def forward_batch(self, receptors: ReceptorData) -> Tensor:
+		raise NotImplementedError
 
-def extract_list(filepath, class_name=''):
-	df = pd.read_csv(filepath)
-	return [type(class_name, (object,), dict(row[1])) for row in df.iterrows()]
-
-def prep_links(links=None):
-	if links is None:
-		links = extract_list(DIRECTORY + '/data/link_data.csv', 'link')
-	coords = torch.DoubleTensor([[l.x, l.y] for l in links]).T.to(DEVICE)
-	coords_dot = (coords * coords).sum(dim=0)
-	subtract = torch.Tensor([[l.elevation_mean] for l in links]).to(DEVICE)
-	keep = torch.Tensor([[[
-		link.traffic_flow * link.link_length,
-		link.traffic_speed,
-		link.fleet_mix_light,
-		link.fleet_mix_medium,
-		link.fleet_mix_heavy,
-		link.fleet_mix_commercial,
-		link.fleet_mix_bus,
-		MET_DATA[link.nearest_met_station_id].wind_direction,
-		MET_DATA[link.nearest_met_station_id].wind_speed,
-		abs(sin((MET_DATA[link.nearest_met_station_id].wind_direction - link.angle) * pi / 180)),
-	] for link in links]]).to(DEVICE).repeat(BATCH_SIZE, 1, 1)
-	# If too much memory or need multiple batch sizes, move repeat to make_x (distances.shape[0])
-	return (coords, coords_dot, subtract, keep)
-
-def prep_receptors(receptors=None):
-	if receptors is None:
-		receptors = extract_list(DIRECTORY + '/data/receptor_data.csv', 'receptor')
-	coords = torch.DoubleTensor([[r.x, r.y] for r in receptors]).to(DEVICE)
-	coords_dot = (coords * coords).sum(dim=1).unsqueeze(dim=-1)
-	subtract = torch.Tensor([[[r.elevation]] for r in receptors]).to(DEVICE)
-	return (coords, coords_dot, subtract)
-  
-def prep_batch(receptors):
-	prepped = prep_receptors(receptors)
-	y = torch.Tensor([[TRANSFORM_OUTPUT(r.pollution_concentration, r.nearest_link_distance)] for r in receptors]).to(DEVICE)
-	nearest_link_distances = torch.Tensor([[r.nearest_link_distance] for r in receptors]).to(DEVICE)
-	return (prepped, y, nearest_link_distances)
-
-class Model(torch.nn.Module):
-	def __init__(self):
-		super().__init__()
-		self.layer_1 = torch.nn.Linear(INPUT_SIZE, HIDDEN_SIZE).to(DEVICE)
-		self.activ = torch.nn.Sigmoid().to(DEVICE)
-		self.layer_2 = torch.nn.Linear(HIDDEN_SIZE, 1).to(DEVICE)
-
-	def forward(self, x):
-		s1 = self.layer_1(x)
-		a1 = self.activ(s1)
-		s2 = self.layer_2(a1)
-		return s2.abs()
-
-	@staticmethod
-	def make_x(links, receptors):
-		distances_inv = (links[1] - (2 * (receptors[0] @ links[0])) + receptors[1]).sqrt().reciprocal().unsqueeze(dim=2).type(torch.Tensor).to(DEVICE)
-		subtracted = links[2] - receptors[2]
-		kept = links[3]
-		cat = torch.cat((distances_inv, subtracted, kept), dim=-1)
-		normalized = (cat - FEATURE_STATS[0])/FEATURE_STATS[1]
-		filter = distances_inv > (1/DISTANCE_THRESHOLD)
-		return (normalized, filter)
-
-	def forward_batch(self, links, receptors):
-		(x, filter) = Model.make_x(links, receptors)
-		return (self.forward(x) * filter).sum(dim=1)
-
-	def get_error(self, links, receptors, y):
+	def set_link_data(self, links: List[Link], met_data: Dict[int, MetStation]) -> None:
+		raise NotImplementedError
+		
+	def get_error(self, receptors: ReceptorData, y: Tensor) -> Number:
 		"""
 		[y] is Tensor of corresponding true pollution concentrations
 		"""
-		y_hat = self.forward_batch(links, receptors)
-		return ERROR_FUNCTION(y_hat, y).item()
+		y_hat = self.forward_batch(receptors)
+		return error_function(y_hat, y).item()
 
-	def print_batch_errors(self, links, batches):
+	def print_batch_errors(self, batches: List[ReceptorBatch]) -> None:
 		err_funcs = [
-			('Mult Factor', lambda y_hat, y: (torch.max(y_hat, y) / torch.min(y_hat, y)).mean()),
+			('Mult Factor', mult_factor_error),
 			('MSE', torch.nn.MSELoss()),
-			('MRE', MRE),
+			('MRE', mre),
 			('MAE', torch.nn.L1Loss()),
 		]
-
 		errors = [0] * len(err_funcs)
-		for (receptors, y, nld) in batches:
-			nld_cpu = nld.cpu()
-			y_final = TRANSFORM_OUTPUT_INV(y.cpu(), nld_cpu)
-			y_hat_final = TRANSFORM_OUTPUT_INV(self.forward_batch(links, receptors).cpu(), nld_cpu)
+		for batch in batches:
+			nld_cpu = batch.nearest_link_distances.cpu()
+			y_final = self.params.transform_output_inv(batch.y.cpu(), nld_cpu)
+			y_hat_final = self.params.transform_output_inv(
+				self.forward_batch(batch.receptors).cpu(), 
+				nld_cpu
+			)
 			for i in range(len(err_funcs)):
 				errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
 		print('Final Errors:')
 		for i in range(len(err_funcs)):
 			print(err_funcs[i][0] + ': ' + str(errors[i]))
 
-	def save(self, filepath, optimizer=None):
+	def save(self, filepath: str, optimizer: Optimizer) -> None:
 		torch.save({
+			'model_params': self.params.as_dict(),
 			'model_state_dict': self.state_dict(),
 			'optimizer_class': optimizer.__class__,
 			'optimizer_state_dict': optimizer.state_dict(),
@@ -161,9 +134,9 @@ class Model(torch.nn.Module):
 		}, filepath)
 	
 	@staticmethod
-	def load(filepath):
+	def load(filepath: str, base_class, params_class) -> Tuple[Any, Optimizer]:
 		loaded = torch.load(filepath)
-		model = Model()
+		model = base_class(params_class.from_dict(loaded['model_params']))
 		model.load_state_dict(loaded['model_state_dict'])
 		optimizer = loaded['optimizer_class'](model.parameters())
 		optimizer.load_state_dict(loaded['optimizer_state_dict'])
@@ -171,14 +144,16 @@ class Model(torch.nn.Module):
 
 	def train(
 		self, 
-		optimizer, 
-		num_epochs, 
-		links, 
-		train_batches, 
-		val_batches, 
-		save_location=None, 
-		make_graphs=False
+		optimizer: Optimizer, 
+		num_epochs: int,
+		train_batches: List[ReceptorBatch], 
+		val_batches: List[ReceptorBatch], 
+		save_location: Optional[str], 
+		make_graphs: bool
 	):
+		if self.link_data is None:
+			raise Exception('Link Data Not Set')
+
 		start_time = time()
 
 		losses = []
@@ -187,23 +162,24 @@ class Model(torch.nn.Module):
 		def get_stats(loss):
 			losses.append(loss / len(train_batches))
 			print('Loss: ' + str(losses[-1]))
-			val_errors.append(sum([self.get_error(links, receptors, y) for (receptors, y, _) in val_batches])/len(val_batches))
+			val_errors.append(sum([self.get_error(batch.receptors, batch.y) for batch in val_batches])/len(val_batches))
 			print('Val Error: ' + str(val_errors[-1]))
 
-		get_stats(sum([LOSS_FUNCTION(self.forward_batch(links, receptors), y).item() for (receptors, y, _) in train_batches]))
+		get_stats(sum([loss_function(self.forward_batch(batch.receptors), batch.y).item() for batch in train_batches]))
 		
-		self.save(save_location, optimizer)
-		print('Saved Model!')
+		if save_location is not None:
+			self.save(save_location, optimizer)
+			print('Saved Model!')
 
 		curr_epoch = 0
 		stop_training = False
 		while not stop_training:
 			epoch_loss = 0
-			for (receptors, y, _) in train_batches:
+			for batch in train_batches:
 				optimizer.zero_grad()
-				y_hat = self.forward_batch(links, receptors)
-				loss = LOSS_FUNCTION(y_hat, y)
-				epoch_loss += loss.item()
+				y_hat = self.forward_batch(batch.receptors)
+				loss = loss_function(y_hat, batch.y)
+				epoch_loss += float(loss.item())
 				loss.backward()
 				optimizer.step()
 			print('---------------------------------------------')
@@ -224,15 +200,27 @@ class Model(torch.nn.Module):
 				plt.title(next(titles))
 				plt.show()
 
-	def graph_prediction_error(self, links, batches):
-		def predict_batch(batch):
+	def graph_prediction_error(self, batches: List[ReceptorBatch]) -> None:
+		def predict_batch(batch: ReceptorBatch) -> List[Tuple[Number, Coordinate, Value]]:
 			"""
 			returns list of [(nearest link distance, coordinates, graph error)]
 			for each receptor in the batch
 			"""
-			(receptors, y, nld) = batch
-			fwd = self.forward_batch(links, receptors).detach()
-			return [(nld[i].item(), tuple(receptors[0][i].tolist()), GRAPH_ERROR_FUNCTION(TRANSFORM_OUTPUT_INV(fwd[i].item(), nld[i].item()), TRANSFORM_OUTPUT_INV(y[i].item(), nld[i].item()))) for i in range(receptors[0].shape[0])]
+			fwd = self.forward_batch(batch.receptors).detach()
+			return [(
+				batch.nearest_link_distances[i].item(), 
+				batch.coordinate(i), 
+				graph_error_function(
+					self.params.transform_output_inv(
+						fwd[i].item(), 
+						batch.nearest_link_distances[i].item()
+					), 
+					self.params.transform_output_inv(
+						batch.y[i].item(), 
+						batch.nearest_link_distances[i].item()
+					)
+				)
+			) for i in range(batch.size())]
 
 		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
 
@@ -301,7 +289,7 @@ class Model(torch.nn.Module):
 			proportion = (transform(sign * x) - min_transformed)/(max_transformed - min_transformed)
 			return ((1 - proportion) * light) + (proportion * dark)
 
-		plt.scatter([p[1][0] for p in predictions], [p[1][1] for p in predictions], s=1, c=[get_color(p[2]) for p in predictions])
+		plt.scatter([p[1].x for p in predictions], [p[1].y for p in predictions], s=1, c=[get_color(p[2]) for p in predictions])
 
 		plt.show()
 
@@ -318,71 +306,45 @@ class Model(torch.nn.Module):
 			x = transform_inv(min_transformed + ((abs(i)/n) * (max_transformed - min_transformed))) * (1 if i > 0 else -1)
 			ax.axvline(x, c=get_color(x), linewidth=4)
 
-	def export_predictions(self, links, batches, filepath):
-		def predict_batch(batch):
+	def export_predictions(self, batches: List[ReceptorBatch], filepath: str) -> None:
+		def predict_batch(batch: ReceptorBatch) -> List[
+				Tuple[float, float, Value, Value, Value]
+			]:
 			"""
 			returns list of [(x, y, prediction, actual, graph error)]
 			for each receptor in the batch
 			"""
-			(receptors, y, nld) = batch
-			fwd = self.forward_batch(links, receptors).detach()
-			def make_tuple(i):
-				prediction = TRANSFORM_OUTPUT_INV(fwd[i].item(), nld[i].item())
-				actual = TRANSFORM_OUTPUT_INV(y[i].item(), nld[i].item())
-				return (receptors[0][i][0].item(), receptors[0][i][1].item(), prediction, actual, GRAPH_ERROR_FUNCTION(prediction, actual))
-			return [make_tuple(i) for i in range(receptors[0].shape[0])]
+			fwd = self.forward_batch(batch.receptors).detach()
+			def make_tuple(i: int) -> Tuple[float, float, Value, Value, Value]:
+				prediction = self.params.transform_output_inv(
+					fwd[i].item(), 
+					batch.nearest_link_distances[i].item()
+				)
+				actual = self.params.transform_output_inv(
+					batch.y[i].item(), 
+					batch.nearest_link_distances[i].item()
+				)
+				coord = batch.coordinate(i)
+				return (
+					coord.x,
+					coord.y,
+					prediction,
+					actual,
+					graph_error_function(prediction, actual)
+				)
+
+			return [make_tuple(i) for i in range(batch.size())]
 		
-		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
+		predictions = reduce(
+			iconcat,
+			[predict_batch(batch) for batch in batches], 
+			[]
+		)
 		
 		out_file = open(filepath, 'w')
-		format = lambda l: str(l).replace('\'', '').replace(', ', ',')[1:-1] + '\n'
+		format = lambda l: \
+			str(l).replace('\'', '').replace(', ', ',')[1:-1] + '\n'
 		out_file.write(format(['x', 'y', 'prediction', 'actual', 'error']))
 		for prediction in predictions:
 			out_file.write(format(prediction))
 		out_file.close()
-
-if __name__ == "__main__":
-	links_list = extract_list(DIRECTORY + '/data/link_data.csv', 'link')
-	receptors_list = [r for r in extract_list(DIRECTORY + '/data/receptor_data.csv', 'receptor') if (r.nearest_link_distance <= DISTANCE_THRESHOLD and r.pollution_concentration >= CONCENTRATION_THRESHOLD)]
-	shuffle(links_list)
-	shuffle(receptors_list)
-
-	links = prep_links(links_list)
-
-	def make_batches(condition):
-		unprepped = [receptors_list[i] for i in range(len(receptors_list)) if condition(i)]
-		batches = [prep_batch(unprepped[i:i+BATCH_SIZE]) for i in range(0, len(unprepped) - BATCH_SIZE, BATCH_SIZE)]
-		return batches
-
-	train_batches = make_batches(lambda i: (i % 5 < 3)) # 60%
-	val_batches = make_batches(lambda i: (i % 5 == 3)) # 20%
-
-	model = Model()
-	optimizer = torch.optim.AdamW(model.parameters(), lr = LEARNING_RATE)
-	num_epochs = 1000
-	save_location = DIRECTORY + '/Model Saves/model_save_' + strftime('%m-%d-%y %H:%M:%S') + ' ' + NOTEBOOK_NAME
-	print('Save Location: ' + save_location)
-
-	model.train(
-		optimizer, 
-		num_epochs, 
-		links, 
-		train_batches, 
-		val_batches,
-		save_location,
-		True,
-	)
-
-	best_model, _ = Model.load(save_location)
-	(r, y, nld) = val_batches[1]
-	fwd = best_model.forward_batch(links, r)
-	for i in range(5):
-		print((TRANSFORM_OUTPUT_INV(fwd[i].item(), nld[i].item()), TRANSFORM_OUTPUT_INV(y[i].item(), nld[i].item())))
-
-	print(sum([best_model.get_error(links, receptors, y) for (receptors, y, _) in val_batches])/len(val_batches))
-
-	best_model.graph_prediction_error(links, val_batches)
-
-	best_model.export_predictions(links, val_batches, save_location[save_location.rindex('model_save_') + 11:save_location.rindex('.')] + ' Predictions.csv')
-
-	best_model.print_batch_errors(links, val_batches)
