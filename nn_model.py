@@ -10,9 +10,6 @@ from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	lambda_to_string, A, B, TRANSFORM_OUTPUT, TRANSFORM_OUTPUT_INV, \
 	partition, train_val_split
 
-
-
-
 NOTEBOOK_NAME = 'nn_mode.py'
 DIRECTORY = '.'
 
