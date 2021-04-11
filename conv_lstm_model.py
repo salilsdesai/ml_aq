@@ -405,8 +405,8 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 						for j in range(channels.shape[1]):
 							channels[i][j][bin_x][bin_y] /= counts[bin_x][bin_y]
 
-		mean = channels.mean(dim=(1, 2, 3), keepdim=True)
-		std = channels.std(dim=(1, 2, 3), keepdim=True)
+		mean = channels.mean(dim=(0, 2, 3), keepdim=True)
+		std = channels.std(dim=(0, 2, 3), keepdim=True)
 
 		self.link_data = LinkData(
 			((channels - mean) / std).unsqueeze(dim=0).repeat(self.params.batch_size, 1, 1, 1, 1)
