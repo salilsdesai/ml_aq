@@ -40,7 +40,7 @@ class ConvLSTMReceptorBatch(ReceptorBatch):
 		"""
 		return self.coordinates[i]
 	def size(self) -> int:
-		return self.receptors.coords.shape[0]
+		return self.receptors.distances.shape[0]
 
 class ConvLSTMModelParams(ModelParams):
 	def __init__(
@@ -81,7 +81,7 @@ class ConvLSTMModelParams(ModelParams):
 			hidden_size = d['hidden_size'],
 			batch_size = d['batch_size'],
 			transform_output_src = d['transform_output_src'],
-			transform_output_inv_src =d['transform_output_inv_src'],
+			transform_output_inv_src = d['transform_output_inv_src'],
 			concentration_threshold = d['concentration_threshold'],
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
@@ -91,7 +91,7 @@ class ConvLSTMModelParams(ModelParams):
 			time_periods = d['time_periods'],
 			distance_feature_stats = Features.FeatureStats(
 				mean = d['distances_feature_stats'][0], 
-				std_dev = d['distances_feature_stats'][0]
+				std_dev = d['distances_feature_stats'][1]
 			)  if d['distances_feature_stats'] is not None else None,
 		)
 	
