@@ -106,7 +106,7 @@ class NNModel(Model):
 	def make_x(self, receptors: ReceptorData) -> Tuple[Tensor, Tensor]:
 		if self.feature_stats is None:
 			raise Exception('Feature Stats Not Set')
-		distances_inv = (self.link_data.coords_dot - (2 * (receptors.coords @ self.link_data.coords)) + receptors.coords_dot).sqrt().reciprocal().unsqueeze(dim=2).type(torch.Tensor).to(DEVICE)
+		distances_inv = (self.link_data.coords_dot - (2 * (receptors.coords @ self.link_data.coords)) + receptors.coords_dot).sqrt().reciprocal().unsqueeze(dim=2).type(Tensor).to(DEVICE)
 		subtracted = self.link_data.subtract - receptors.subtract
 		kept = self.link_data.keep
 		cat = torch.cat((distances_inv, subtracted, kept), dim=-1)
@@ -120,26 +120,26 @@ class NNModel(Model):
 			data = ReceptorData(
 				coords, 
 				(coords * coords).sum(dim=1).unsqueeze(dim=-1), 
-				torch.Tensor([[[
+				Tensor([[[
 					Features.GET_FEATURE_DIFFERENCE_RECEPTOR_DATA[f](r) \
 						for f in self.params.subtract_features
 				]] for r in receptors_list]).to(DEVICE)
 			)
 			return NNReceptorBatch(
 				data,
-				torch.Tensor([[self.params.transform_output(r.pollution_concentration, r.nearest_link_distance)] for r in receptors_list]).to(DEVICE),
-				torch.Tensor([[r.nearest_link_distance] for r in receptors_list]).to(DEVICE)
+				Tensor([[self.params.transform_output(r.pollution_concentration, r.nearest_link_distance)] for r in receptors_list]).to(DEVICE),
+				Tensor([[r.nearest_link_distance] for r in receptors_list]).to(DEVICE)
 			)
 		return [make_batch(receptors_list) for receptors_list in receptors]
 		
 	def set_link_data(self, links: List[Link], met_data: Dict[int, MetStation]) -> None:
 		coords = torch.DoubleTensor([[l.x, l.y] for l in links]).T.to(DEVICE)
 		coords_dot = (coords * coords).sum(dim=0)
-		subtract = torch.Tensor([[
+		subtract = Tensor([[
 			Features.GET_FEATURE_DIFFERENCE_LINK_DATA[f](l) \
 				for f in self.params.subtract_features
 		] for l in links]).to(DEVICE)
-		keep = torch.Tensor([[[
+		keep = Tensor([[[
 			Features.GET_FEATURE[f](link, met_data) \
 				for f in self.params.link_features
 		] for link in links]]).to(DEVICE).repeat(self.params.batch_size, 1, 1)
@@ -194,6 +194,31 @@ model = NNModel(
 )
 
 if __name__ == '__main__':
+	model = NNModel(
+		NNModelParams(
+			hidden_size = 8,
+			batch_size = 1000,
+			transform_output_src = lambda_to_string(
+				TRANSFORM_OUTPUT,
+				[('A', str(A)), ('B', str(B))]
+			),
+			transform_output_inv_src = lambda_to_string(
+				TRANSFORM_OUTPUT_INV,
+				[('A', str(A)), ('B', str(B))]
+			),
+			concentration_threshold = 0.01,
+			distance_threshold = 500,
+			link_features = [
+				Features.VMT, Features.TRAFFIC_SPEED, Features.FLEET_MIX_LIGHT,
+				Features.FLEET_MIX_MEDIUM, Features.FLEET_MIX_HEAVY,
+				Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
+				Features.WIND_DIRECTION, Features.WIND_SPEED,
+				Features.UP_DOWN_WIND_EFFECT,
+			],
+			subtract_features = [Features.ELEVATION_DIFFERENCE],
+		)
+	)
+	
 	links_list = Link.load_links(DIRECTORY + '/data/link_data.csv')
 	met_data = MetStation.load_met_data(DIRECTORY + '/data/met_data.csv')
 	feature_stats = Features.get_all_feature_stats(DIRECTORY + '/data/feature_stats.csv')

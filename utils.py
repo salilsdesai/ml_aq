@@ -190,15 +190,15 @@ class Features():
 
 	GET_FEATURE_WITH_SUFFIX: Dict[str, Callable[[Link, str, Dict[int, MetStation]], float]] = {
 		VMT: lambda link, suffix, met_data: getattr(link, 'traffic_flow' + suffix) * getattr(link, 'link_length' + suffix),
-		TRAFFIC_SPEED: lambda link, suffix, met_data: getattr(link, TRAFFIC_SPEED + suffix),
-		FLEET_MIX_LIGHT: lambda link, suffix, met_data: getattr(link, FLEET_MIX_LIGHT + suffix),
-		FLEET_MIX_MEDIUM: lambda link, suffix, met_data: getattr(link, FLEET_MIX_MEDIUM + suffix),
-		FLEET_MIX_HEAVY: lambda link, suffix, met_data: getattr(link, FLEET_MIX_HEAVY + suffix),
-		FLEET_MIX_COMMERCIAL: lambda link, suffix, met_data: getattr(link, FLEET_MIX_COMMERCIAL + suffix),
-		FLEET_MIX_BUS: lambda link, suffix, met_data: getattr(link, FLEET_MIX_BUS + suffix), 
-		WIND_DIRECTION: lambda link, suffix, met_data: getattr(met_data[link.nearest_met_station_id], WIND_DIRECTION + suffix),
-		WIND_SPEED: lambda link, suffix, met_data: getattr(met_data[link.nearest_met_station_id], WIND_SPEED + suffix),
-		UP_DOWN_WIND_EFFECT: lambda link, suffix, met_data: abs(sin((getattr(met_data[link.nearest_met_station_id], WIND_DIRECTION + suffix) - link.angle) * pi / 180)),
+		TRAFFIC_SPEED: lambda link, suffix, met_data: getattr(link, Features.TRAFFIC_SPEED + suffix),
+		FLEET_MIX_LIGHT: lambda link, suffix, met_data: getattr(link, Features.FLEET_MIX_LIGHT + suffix),
+		FLEET_MIX_MEDIUM: lambda link, suffix, met_data: getattr(link, Features.FLEET_MIX_MEDIUM + suffix),
+		FLEET_MIX_HEAVY: lambda link, suffix, met_data: getattr(link, Features.FLEET_MIX_HEAVY + suffix),
+		FLEET_MIX_COMMERCIAL: lambda link, suffix, met_data: getattr(link, Features.FLEET_MIX_COMMERCIAL + suffix),
+		FLEET_MIX_BUS: lambda link, suffix, met_data: getattr(link, Features.FLEET_MIX_BUS + suffix), 
+		WIND_DIRECTION: lambda link, suffix, met_data: getattr(met_data[link.nearest_met_station_id], Features.WIND_DIRECTION + suffix),
+		WIND_SPEED: lambda link, suffix, met_data: getattr(met_data[link.nearest_met_station_id], Features.WIND_SPEED + suffix),
+		UP_DOWN_WIND_EFFECT: lambda link, suffix, met_data: abs(sin((getattr(met_data[link.nearest_met_station_id], Features.WIND_DIRECTION + suffix) - link.angle) * pi / 180)),
 	}
 
 	class FeatureStats():
