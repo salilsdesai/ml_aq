@@ -6,6 +6,8 @@ import numpy as np
 from typing import Any, Dict, List, Union, Callable, Tuple
 from math import sin, pi
 import inspect
+from operator import iconcat
+from functools import reduce
 
 DEVICE: str = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -226,3 +228,6 @@ def train_val_split(l: List) -> Tuple[List, List]:
 	train = [l[i] for i in range(len(l)) if (i % 5) < 3] # 60%
 	val = [l[i] for i in range(len(l)) if (i % 5) == 3] # 20%
 	return (train, val)
+
+def flatten(l: List[List[Any]]) -> List[Any]:
+	return reduce(iconcat, l, [])

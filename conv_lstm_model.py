@@ -3,20 +3,22 @@ import torch
 from time import strftime
 from torch import Tensor
 from torch.optim.optimizer import Optimizer
-from typing import List, Tuple, Dict, Optional, Any, Union
+from typing import List, Tuple, Dict, Optional, Any
 
 from .model import Model, ReceptorBatch, ModelParams
 from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	lambda_to_string, A, B, TRANSFORM_OUTPUT, TRANSFORM_OUTPUT_INV, \
-	partition, train_val_split
+	partition, train_val_split, flatten
 
 NOTEBOOK_NAME = 'conv_lstm_model.py'
 DIRECTORY = '.'
 
 class LinkData():
-	def __init__(self, channels: Tensor):
+	def __init__(self, channels: Tensor, num_time_periods: int, bin_counts: Tensor, bin_centers: Tensor):
 		self.channels: Tensor = channels
-		self.num_time_periods: int = channels.shape[1]
+		self.num_time_periods: int = num_time_periods
+		self.bin_counts: Tensor = bin_counts
+		self.bin_centers: Tensor = bin_centers
 
 class ReceptorData():
 	def __init__(self, distances: Tensor, closest_filter: Tensor):
@@ -106,32 +108,6 @@ class ConvLSTMModelParams(ModelParams):
 				self.distance_feature_stats.std_dev
 			) if self.distance_feature_stats is not None else None,
 		}
-
-class BinsData():
-	class XY():
-		def __init__(self, x: Union[float, int], y: Union[float, int]):
-			self.x = x
-			self.y = y
-		def set(self, i: int, val: Union[float, int]) -> None:
-			if (i == 0):
-				self.x = val
-			elif (i == 1):
-				self.y = val
-			else:
-				raise Exception('Invalid Index: ' + str(i))
-		def get(self, i: int) -> Union[float, int]:
-			if (i == 0):
-				return self.x
-			elif (i == 1):
-				return self.y
-			else:
-				raise Exception('Invalid Index: ' + str(i))
-
-	def __init__(self, num: XY, mins: XY, sizes: XY, counts: Tensor):
-		self.num: BinsData.XY = num
-		self.mins: BinsData.XY = mins
-		self.sizes: BinsData.XY = sizes
-		self.counts: Tensor = counts
 
 class CumulativeStats:
 	"""
@@ -297,6 +273,22 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 			kernel_size = self.kernel_size
 		)
 	
+	def get_receptor_locations(self, receptors_list: List[Receptor]) -> Tuple[List[List[float]], Tensor]:
+		"""
+		Returns 
+		- A list of the x and y coordinates of each receptor represented as a
+		list of size 2
+		- 3 dimensional tensor, where the value at index (i, j, k) is the 
+		distance from receptor i to the center of bin (j, k)
+		"""
+		if self.link_data is None:
+			raise Exception('Link Data Not Set')
+		
+		coords_list = [[r.x, r.y] for r in receptors_list]
+		receptor_coords_tensor = Tensor(coords_list).to(DEVICE).unsqueeze(dim=1).unsqueeze(dim=1)
+		distances = torch.linalg.norm(receptor_coords_tensor - self.link_data.bin_centers, dim=3)
+		return coords_list, distances 
+	
 	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> List[ReceptorBatch]:  
 		if self.link_data is None:
 			raise Exception('Link Data Not Set')
@@ -304,17 +296,11 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 		if len(receptors) == 0:
 			return []
 
-		x_centers = Tensor([self.bins_data.mins.x + ((i + 0.5) * self.bins_data.sizes.x) for i in range(int(self.bins_data.num.x))]).to(DEVICE)
-		y_centers = Tensor([self.bins_data.mins.y + ((j + 0.5) * self.bins_data.sizes.y) for j in range(int(self.bins_data.num.y))]).to(DEVICE)
-		centers = torch.cartesian_prod(x_centers, y_centers).reshape(x_centers.shape[0], y_centers.shape[0], 2).unsqueeze(dim=0)
-		
 		cumulative_stats = CumulativeStats() if self.params.distance_feature_stats is None else None
 
 		def make_batch(receptors_list: List[Receptor]) -> ReceptorBatch:
-			receptor_coords = [[r.x, r.y] for r in receptors_list]
-			receptor_coords_tensor = Tensor(receptor_coords).to(DEVICE).unsqueeze(dim=1).unsqueeze(dim=1)
-			distances = torch.linalg.norm(receptor_coords_tensor - centers, dim=3).unsqueeze(dim=1).unsqueeze(dim=1) 
-			
+			coords_list, distances = self.get_receptor_locations(receptors_list)
+			distances = distances.unsqueeze(dim=1).unsqueeze(dim=1)
 			if cumulative_stats is not None:
 				cumulative_stats.update(distances)
 			
@@ -323,12 +309,13 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 			data = ReceptorData(distances, closest_filter)
 			y = Tensor([[self.params.transform_output(r.pollution_concentration, r.nearest_link_distance)] for r in receptors_list]).to(DEVICE)
 			nearest_link_distances = Tensor([[r.nearest_link_distance] for r in receptors_list]).to(DEVICE)
-			
+			coordinates = [Coordinate(c[0], c[1]) for c in coords_list]
+
 			return ConvLSTMReceptorBatch(
 				receptors = data,
 				y = y,
 				nearest_link_distances = nearest_link_distances,
-				coordinates = [Coordinate(c[0], c[1]) for c in receptor_coords]
+				coordinates = coordinates
 			)
 		
 		batches = [make_batch(receptors_list) for receptors_list in receptors]
@@ -345,6 +332,24 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 		
 		return batches
 
+	def filter_receptors(self, receptors: List[Receptor]) -> List[Receptor]:
+		"""
+		Override
+		In addition to parent method filters, also remove receptors with
+		no links in the closest bin to them
+		"""
+		receptors = super().filter_receptors(receptors)
+		partitions = partition(receptors, self.params.batch_size)
+
+		def filter_no_link_in_closest_bin(receptors_list: List[Receptor]) -> List[Receptor]:
+			_, distances = self.get_receptor_locations(receptors_list)
+			min_indices = distances.flatten(start_dim=1, end_dim=2).min(dim=1).indices
+			min_indices_i = (min_indices / distances.shape[2]).long()
+			min_indices_j = (min_indices % distances.shape[2]).long()
+			closest_bin_link_counts = self.link_data.bin_counts[min_indices_i].gather(1, min_indices_j.view(-1,1))
+			return [receptors_list[i] for i in range(len(receptors_list)) if closest_bin_link_counts[i] > 0]
+
+		return flatten([filter_no_link_in_closest_bin(p) for p in partitions])
 
 	def forward_batch(self, receptors: ReceptorData) -> Tensor:
 		"""
@@ -352,7 +357,7 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 		"""
 		x = torch.cat((receptors.distances.repeat(1, self.link_data.num_time_periods, 1, 1, 1), self.link_data.channels), dim=2)
 		fwd = self.forward(x)
-		filtered = (fwd * receptors.closest_filter).squeeze(1) * self.bins_data.counts
+		filtered = (fwd * receptors.closest_filter).squeeze(1) * self.link_data.bin_counts
 		return filtered.sum(dim=2).sum(dim=2)
 	
 	def set_link_data(self, links: List[Link], met_data: Dict[int, MetStation]) -> None:
@@ -374,8 +379,7 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 		max_x += 1
 		max_y += 1
 		
-		bin_mins = BinsData.XY(min_x, min_y)
-		spreads = (max_x - bin_mins.x, max_y - bin_mins.y)
+		spreads = (max_x - min_x, max_y - min_y)
 		num_x, num_y = round(spreads[0] / self.params.approx_bin_size), round(spreads[1] / self.params.approx_bin_size)
 		size_x, size_y = spreads[0] / num_x, spreads[1] / num_y
 
@@ -388,8 +392,8 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 		counts = torch.zeros(num_x, num_y).to(DEVICE)
 
 		for link in links:
-			bin_x = int((link.x - bin_mins.x) / size_x)
-			bin_y = int((link.y - bin_mins.y) / size_y)
+			bin_x = int((link.x - min_x) / size_x)
+			bin_y = int((link.y - min_y) / size_y)
 			for i in range(channels.shape[0]):
 				for j in range(channels.shape[1]):
 					channels[i][j][bin_x][bin_y] += \
@@ -408,14 +412,17 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 		mean = channels.mean(dim=(0, 2, 3), keepdim=True)
 		std = channels.std(dim=(0, 2, 3), keepdim=True)
 
+		channels = ((channels - mean) / std).unsqueeze(dim=0).repeat(self.params.batch_size, 1, 1, 1, 1)
+
+		x_centers = Tensor([min_x + ((i + 0.5) * size_x) for i in range(num_x)]).to(DEVICE)
+		y_centers = Tensor([min_y + ((j + 0.5) * size_y) for j in range(num_y)]).to(DEVICE)
+		centers = torch.cartesian_prod(x_centers, y_centers).reshape(x_centers.shape[0], y_centers.shape[0], 2).unsqueeze(dim=0)
+
 		self.link_data = LinkData(
-			((channels - mean) / std).unsqueeze(dim=0).repeat(self.params.batch_size, 1, 1, 1, 1)
-		)
-		self.bins_data = BinsData(
-			num = BinsData.XY(num_x, num_y),
-			mins = BinsData.XY(min_x, min_y),
-			sizes = BinsData.XY(size_x, size_y),
-			counts = counts,
+			channels = channels,
+			num_time_periods = len(self.params.time_periods),
+			bin_counts = counts,
+			bin_centers = centers,
 		)
 		
 	@staticmethod

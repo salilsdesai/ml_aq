@@ -4,7 +4,6 @@ import torch
 from functools import reduce
 from matplotlib import pyplot as plt
 from matplotlib import colors, ticker
-from operator import iconcat
 from time import time, strftime, localtime
 from torch import Tensor
 from torch.optim import Optimizer
@@ -12,7 +11,8 @@ from torch.types import Number
 from typing import Callable, List, Tuple, Optional, Dict, Any, TypeVar, Generic
 
 from .utils import MetStation, mre, loss_function, error_function, Value, \
-	graph_error_function, mult_factor_error, Link, Receptor, Coordinate
+	graph_error_function, mult_factor_error, Link, Receptor, Coordinate, \
+	flatten
 
 ReceptorData = TypeVar('ReceptorData')
 LinkData = TypeVar('LinkData')
@@ -85,6 +85,9 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		self.params = params
 	
 	def filter_receptors(self, receptors: List[Receptor]) -> List[Receptor]:
+		"""
+		Remove receptors with negligible concentration or no nearby links
+		"""
 		return [r for r in receptors if (r.nearest_link_distance <= self.params.distance_threshold and r.pollution_concentration >= self.params.concentration_threshold)]
 	
 	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> ReceptorBatch:
@@ -222,7 +225,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 				)
 			) for i in range(batch.size())]
 
-		predictions = reduce(iconcat, [predict_batch(batch) for batch in batches], [])
+		predictions = flatten([predict_batch(batch) for batch in batches])
 
 		cutoff = 0.05
 		original_size = len(predictions)
@@ -335,11 +338,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 
 			return [make_tuple(i) for i in range(batch.size())]
 		
-		predictions = reduce(
-			iconcat,
-			[predict_batch(batch) for batch in batches], 
-			[]
-		)
+		predictions = flatten([predict_batch(batch) for batch in batches])
 		
 		out_file = open(filepath, 'w')
 		format = lambda l: \
