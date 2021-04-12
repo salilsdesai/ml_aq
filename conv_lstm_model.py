@@ -461,7 +461,6 @@ if __name__ == '__main__':
 
 	links_list = Link.load_links(DIRECTORY + '/data/link_data.csv')
 	met_data = MetStation.load_met_data(DIRECTORY + '/data/met_data.csv')
-	feature_stats = Features.get_all_feature_stats(DIRECTORY + '/data/feature_stats.csv')
 
 	model.set_link_data(links_list, met_data)
 
