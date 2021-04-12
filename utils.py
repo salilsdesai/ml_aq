@@ -191,7 +191,7 @@ class Features():
 	}
 
 	GET_FEATURE_WITH_SUFFIX: Dict[str, Callable[[Link, str, Dict[int, MetStation]], float]] = {
-		VMT: lambda link, suffix, met_data: getattr(link, 'traffic_flow' + suffix) * getattr(link, 'link_length' + suffix),
+		VMT: lambda link, suffix, met_data: getattr(link, 'traffic_flow' + suffix) * link.link_length,
 		TRAFFIC_SPEED: lambda link, suffix, met_data: getattr(link, Features.TRAFFIC_SPEED + suffix),
 		FLEET_MIX_LIGHT: lambda link, suffix, met_data: getattr(link, Features.FLEET_MIX_LIGHT + suffix),
 		FLEET_MIX_MEDIUM: lambda link, suffix, met_data: getattr(link, Features.FLEET_MIX_MEDIUM + suffix),
