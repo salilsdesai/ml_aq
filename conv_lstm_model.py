@@ -5,22 +5,22 @@ from torch import Tensor
 from torch.optim.optimizer import Optimizer
 from typing import List, Tuple, Dict, Optional, Any
 
-from .model import Model, ReceptorBatch, ModelParams
+from .model import Model, ReceptorBatch, Params
 from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	lambda_to_string, A, B, TRANSFORM_OUTPUT, TRANSFORM_OUTPUT_INV, \
-	partition, train_val_split, flatten
+	partition, train_val_split, flatten, CumulativeStats
 
 NOTEBOOK_NAME = 'conv_lstm_model.py'
 DIRECTORY = '.'
 
-class LinkData():
+class ConvLSTMLinkData():
 	def __init__(self, channels: Tensor, num_time_periods: int, bin_counts: Tensor, bin_centers: Tensor):
 		self.channels: Tensor = channels
 		self.num_time_periods: int = num_time_periods
 		self.bin_counts: Tensor = bin_counts
 		self.bin_centers: Tensor = bin_centers
 
-class ReceptorData():
+class ConvLSTMReceptorData():
 	def __init__(self, distances: Tensor, closest_filter: Tensor):
 		self.distances: Tensor = distances
 		self.closest_filter: Tensor = closest_filter
@@ -28,7 +28,7 @@ class ReceptorData():
 class ConvLSTMReceptorBatch(ReceptorBatch):
 	def __init__(
 		self, 
-		receptors: ReceptorData, 
+		receptors: ConvLSTMReceptorData, 
 		y: Tensor, 
 		nearest_link_distances: Tensor,
 		coordinates: List[Coordinate],
@@ -44,7 +44,7 @@ class ConvLSTMReceptorBatch(ReceptorBatch):
 	def size(self) -> int:
 		return self.receptors.distances.shape[0]
 
-class ConvLSTMModelParams(ModelParams):
+class ConvLSTMModelParams(Params):
 	def __init__(
 		self,
 		hidden_size: int,
@@ -60,7 +60,7 @@ class ConvLSTMModelParams(ModelParams):
 		time_periods: List[str],
 		distance_feature_stats: Optional[Features.FeatureStats]
 	):
-		ModelParams.__init__(
+		Params.__init__(
 			self,
 			hidden_size=hidden_size,
 			batch_size=batch_size,
@@ -108,30 +108,6 @@ class ConvLSTMModelParams(ModelParams):
 				self.distance_feature_stats.std_dev
 			) if self.distance_feature_stats is not None else None,
 		}
-
-class CumulativeStats:
-	"""
-	Code based on
-	http://notmatthancock.github.io/2017/03/23/simple-batch-stat-updates.html
-	"""
-	def __init__(self):
-		self.mean = Tensor([0]).to(DEVICE)
-		self.stddev = Tensor([0]).to(DEVICE)
-		self.n = 0
-
-	def update(self, data):
-		m1 = self.mean
-		s1 = self.stddev
-		n1 = self.n
-
-		m2 = torch.mean(data)
-		s2 = torch.std(data, unbiased=False)
-		n2 = torch.numel(data)
-		
-		self.n = n1 + n2
-		self.mean = m1 * (n1 / self.n) + m2 * (n2 / self.n)
-		self.stddev = ((s1 ** 2) * (n1 / self.n) + (s2 ** 2) * (n2 / self.n) + ((n1 * n2) / ((n1 + n2) ** 2)) * ((m1 - m2) ** 2)) ** 0.5
-
 
 class ConvLSTMCell(torch.nn.Module):
 	"""
@@ -306,7 +282,7 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 			
 			closest_filter = (distances <= distances.amin(dim=(3, 4)).unsqueeze(dim=3).unsqueeze(dim=4))
 
-			data = ReceptorData(distances, closest_filter)
+			data = ConvLSTMReceptorData(distances, closest_filter)
 			y = Tensor([[self.params.transform_output(r.pollution_concentration, r.nearest_link_distance)] for r in receptors_list]).to(DEVICE)
 			nearest_link_distances = Tensor([[r.nearest_link_distance] for r in receptors_list]).to(DEVICE)
 			coordinates = [Coordinate(c[0], c[1]) for c in coords_list]
@@ -351,7 +327,7 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 
 		return flatten([filter_no_link_in_closest_bin(p) for p in partitions])
 
-	def forward_batch(self, receptors: ReceptorData) -> Tensor:
+	def forward_batch(self, receptors: ConvLSTMReceptorData) -> Tensor:
 		"""
 		Override
 		"""
@@ -418,7 +394,7 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, Model):
 		y_centers = Tensor([min_y + ((j + 0.5) * size_y) for j in range(num_y)]).to(DEVICE)
 		centers = torch.cartesian_prod(x_centers, y_centers).reshape(x_centers.shape[0], y_centers.shape[0], 2).unsqueeze(dim=0)
 
-		self.link_data = LinkData(
+		self.link_data = ConvLSTMLinkData(
 			channels = channels,
 			num_time_periods = len(self.params.time_periods),
 			bin_counts = counts,

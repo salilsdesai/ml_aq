@@ -38,7 +38,7 @@ class ReceptorBatch(Generic[ReceptorData]):
 		raise NotImplementedError
 
 
-class ModelParams():
+class Params():
 	def __init__(
 		self,
 		hidden_size: int,
@@ -79,7 +79,7 @@ class ModelParams():
 
 
 class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
-	def __init__(self, params: ModelParams):	
+	def __init__(self, params: Params):	
 		super(Model, self).__init__()
 		self.link_data: Optional[LinkData] = None
 		self.params = params

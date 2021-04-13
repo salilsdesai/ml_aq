@@ -266,3 +266,26 @@ def get_memory_usage() -> Tuple[Dict[Tuple[str, str], int], int]:
 		except:
 			pass
 	return (d, count)
+
+class CumulativeStats:
+	"""
+	Code based on
+	http://notmatthancock.github.io/2017/03/23/simple-batch-stat-updates.html
+	"""
+	def __init__(self):
+		self.mean = Tensor([0]).to(DEVICE)
+		self.stddev = Tensor([0]).to(DEVICE)
+		self.n = 0
+
+	def update(self, data):
+		m1 = self.mean
+		s1 = self.stddev
+		n1 = self.n
+
+		m2 = torch.mean(data)
+		s2 = torch.std(data, unbiased=False)
+		n2 = torch.numel(data)
+		
+		self.n = n1 + n2
+		self.mean = m1 * (n1 / self.n) + m2 * (n2 / self.n)
+		self.stddev = ((s1 ** 2) * (n1 / self.n) + (s2 ** 2) * (n2 / self.n) + ((n1 * n2) / ((n1 + n2) ** 2)) * ((m1 - m2) ** 2)) ** 0.5
