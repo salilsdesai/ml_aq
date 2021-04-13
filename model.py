@@ -123,6 +123,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			)
 			for i in range(len(err_funcs)):
 				errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
+			y_hat_final = None  # Prevents memory leak
 		print('Final Errors:')
 		for i in range(len(err_funcs)):
 			print(err_funcs[i][0] + ': ' + str(errors[i]))
