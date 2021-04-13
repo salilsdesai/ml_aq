@@ -9,7 +9,7 @@ import sys
 from functools import reduce
 from math import sin, pi
 from operator import iconcat
-from torch import Tensor, is_tensor
+from torch import Tensor
 from torch.types import Number
 from typing import Any, Dict, List, Union, Callable, Tuple
 
