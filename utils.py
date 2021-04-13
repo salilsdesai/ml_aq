@@ -1,13 +1,17 @@
-import torch
-from torch import Tensor
-from torch.types import Number
-import pandas as pd
-import numpy as np
-from typing import Any, Dict, List, Union, Callable, Tuple
-from math import sin, pi
+import gc
 import inspect
-from operator import iconcat
+import numpy as np
+import os
+import pandas as pd
+import torch
+import sys
+
 from functools import reduce
+from math import sin, pi
+from operator import iconcat
+from torch import Tensor, is_tensor
+from torch.types import Number
+from typing import Any, Dict, List, Union, Callable, Tuple
 
 DEVICE: str = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -231,3 +235,34 @@ def train_val_split(l: List) -> Tuple[List, List]:
 
 def flatten(l: List[List[Any]]) -> List[Any]:
 	return reduce(iconcat, l, [])
+
+def get_memory_usage() -> Tuple[Dict[Tuple[str, str], int], int]:
+	"""
+	Returns a tuple of 
+	- Dict mapping from (type, size) -> count of number of objects
+	- Total number of values stored in tensors
+	"""
+	
+	d: Dict[Tuple[str, str], int] = {}
+	count: int = 0
+	for obj in gc.get_objects():
+		try:
+			# Suppress deprecation warning
+			sys.stderr = open(os.devnull, 'w')
+			is_tensor = torch.is_tensor(obj)
+			sys.stderr = sys.__stderr__
+
+			if (is_tensor or (hasattr(obj, 'data') and torch.is_tensor(obj.data))) and (DEVICE in str(obj.device)):
+				type_string = str(type(obj))
+				obj_type = type_string[type_string.find("torch.") + 6:-2]
+				size_list = list(obj.size())
+				tup = (obj_type, str(size_list))
+				count += reduce(lambda x, y: x * y, size_list, 1)
+
+				if tup not in d:
+					d[tup] = 1
+				else:
+					d[tup] += 1
+		except:
+			pass
+	return (d, count)
