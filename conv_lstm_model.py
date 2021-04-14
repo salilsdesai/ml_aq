@@ -268,7 +268,7 @@ if __name__ == '__main__':
 				Features.WIND_DIRECTION, Features.WIND_SPEED,
 				Features.UP_DOWN_WIND_EFFECT,
 			],
-			approx_bin_size = 2000,
+			approx_bin_size = 1000,
 			kernel_size = 3,
 			time_periods = [''],
 			distance_feature_stats = None,
