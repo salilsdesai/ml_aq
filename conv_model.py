@@ -47,7 +47,6 @@ class ConvParams(Params):
 		link_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
-		time_periods: List[str],
 		distance_feature_stats: Optional[Features.FeatureStats]
 	):
 		Params.__init__(
@@ -61,7 +60,6 @@ class ConvParams(Params):
 		)
 		self.approx_bin_size: float = approx_bin_size
 		self.kernel_size: int = kernel_size
-		self.time_periods: List[str] = time_periods
 		self.distance_feature_stats: Optional[Features.FeatureStats] = \
 			distance_feature_stats 
 	
@@ -76,7 +74,6 @@ class ConvParams(Params):
 			link_features = d['link_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
-			time_periods = d['time_periods'],
 			distance_feature_stats = Features.FeatureStats(
 				mean = d['distances_feature_stats'][0], 
 				std_dev = d['distances_feature_stats'][1]
@@ -87,7 +84,6 @@ class ConvParams(Params):
 		return {
 			'approx_bin_size': self.approx_bin_size,
 			'kernel_size': self.kernel_size,
-			'time_periods': self.time_periods,
 			'distances_feature_stats': (
 				self.distance_feature_stats.mean, 
 				self.distance_feature_stats.std_dev

@@ -30,8 +30,8 @@ class ConvLSTMParams(ConvParams):
 		link_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
-		time_periods: List[str],
 		distance_feature_stats: Optional[Features.FeatureStats],
+		time_periods: List[str],
 		num_out_channels: int,
 	):
 		super(ConvLSTMParams, self).__init__(
@@ -43,9 +43,9 @@ class ConvLSTMParams(ConvParams):
 			link_features=link_features,
 			approx_bin_size=approx_bin_size,
 			kernel_size=kernel_size,
-			time_periods=time_periods,
 			distance_feature_stats=distance_feature_stats,
 		)
+		self.time_periods: List[str] = time_periods
 		self.num_out_channels: int = num_out_channels
 	
 	@staticmethod
@@ -59,16 +59,17 @@ class ConvLSTMParams(ConvParams):
 			link_features = d['link_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
-			time_periods = d['time_periods'],
 			distance_feature_stats = Features.FeatureStats(
 				mean = d['distances_feature_stats'][0], 
 				std_dev = d['distances_feature_stats'][1]
 			)  if d['distances_feature_stats'] is not None else None,
+			time_periods = d['time_periods'],
 			num_out_channels = d['num_out_channels'],
 		)
 	
 	def child_dict(self) -> Dict[str, Any]:
 		return {
+			'time_periods': self.time_periods,
 			'num_out_channels': self.num_out_channels,
 		}
 
@@ -266,8 +267,8 @@ if __name__ == '__main__':
 			],
 			approx_bin_size = 1000,
 			kernel_size = 3,
-			time_periods = [''],
 			distance_feature_stats = None,
+			time_periods = [''],
 			num_out_channels = 64,
 		)
 	)
