@@ -1,8 +1,11 @@
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
-from model import extract_list
 from math import pi, sin
+
+def extract_list(filepath, class_name=''):
+	df = pd.read_csv(filepath)
+	return [type(class_name, (object,), dict(row[1])) for row in df.iterrows()]
 
 # Stats Recorder Class by Matt Hancock (http://notmatthancock.github.io/2017/03/23/simple-batch-stat-updates.html)
 class StatsRecorder:

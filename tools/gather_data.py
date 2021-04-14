@@ -1,7 +1,10 @@
 import pandas as pd
 from math import isnan
 from simpledbf import Dbf5
-from model import extract_list
+
+def extract_list(filepath, class_name=''):
+	df = pd.read_csv(filepath)
+	return [type(class_name, (object,), dict(row[1])) for row in df.iterrows()]
 
 SNAKE_CASE = lambda s: s.lower().replace(' ', '_')
 MET_STATIONS = ['NYC', 'LGA', 'JFK']
