@@ -106,16 +106,16 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			('MAE', torch.nn.L1Loss()),
 		]
 		errors = [0] * len(err_funcs)
-		for batch in batches:
-			nld_cpu = batch.nearest_link_distances.cpu()
-			y_final = self.params.transform_output_inv(batch.y.cpu(), nld_cpu)
-			y_hat_final = self.params.transform_output_inv(
-				self.forward_batch(batch.receptors).cpu(), 
-				nld_cpu
-			)
-			for i in range(len(err_funcs)):
-				errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
-			y_hat_final = None  # Prevents memory leak
+		with torch.no_grad():
+			for batch in batches:
+				nld_cpu = batch.nearest_link_distances.cpu()
+				y_final = self.params.transform_output_inv(batch.y.cpu(), nld_cpu)
+				y_hat_final = self.params.transform_output_inv(
+					self.forward_batch(batch.receptors).cpu(), 
+					nld_cpu
+				)
+				for i in range(len(err_funcs)):
+					errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
 		print('Final Errors:')
 		for i in range(len(err_funcs)):
 			print(err_funcs[i][0] + ': ' + str(errors[i]))
@@ -160,8 +160,9 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			print('Loss: ' + str(losses[-1]))
 			val_errors.append(sum([self.get_error(batch.receptors, batch.y) for batch in val_batches])/len(val_batches))
 			print('Val Error: ' + str(val_errors[-1]))
-
-		get_stats(sum([loss_function(self.forward_batch(batch.receptors), batch.y).item() for batch in train_batches]))
+		
+		with torch.no_grad():
+			get_stats(sum([loss_function(self.forward_batch(batch.receptors), batch.y).item() for batch in train_batches]))
 		
 		if save_location is not None:
 			self.save(save_location, optimizer)
@@ -233,7 +234,8 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 				),
 			) for i in range(batch.size())]
 
-		predictions: List[Prediction] = flatten([predict_batch(batch) for batch in batches])
+		with torch.no_grad():
+			predictions: List[Prediction] = flatten([predict_batch(batch) for batch in batches])
 
 		cutoff = 0.05
 		original_size = len(predictions)
@@ -360,7 +362,8 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 
 			return [make_tuple(i) for i in range(batch.size())]
 		
-		predictions = flatten([predict_batch(batch) for batch in batches])
+		with torch.no_grad():
+			predictions = flatten([predict_batch(batch) for batch in batches])
 		
 		out_file = open(filepath, 'w')
 		format = lambda l: \
