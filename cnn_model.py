@@ -1,19 +1,14 @@
 import torch
 
-from time import strftime
 from torch import Tensor
 from torch.nn.functional import relu
 from torch.optim.optimizer import Optimizer
 from typing import List, Tuple, Dict, Optional, Any
 
 from .conv_model import ConvModel, ConvParams, ConvReceptorData
-from .model import Model
-from .utils import Receptor, Link, Features, DEVICE, MetStation, partition, \
-	lambda_to_string, A, B, TRANSFORM_OUTPUT, TRANSFORM_OUTPUT_INV, \
-	train_val_split
-
-NOTEBOOK_NAME = 'conv_lstm_model.py'
-DIRECTORY = '.'
+from .model import Model, ReceptorBatch
+from .utils import Features, DEVICE, lambda_to_string, A, B, TRANSFORM_OUTPUT, \
+	TRANSFORM_OUTPUT_INV
 
 class CNNParams(ConvParams):
 	def __init__(
@@ -181,9 +176,17 @@ class CNNModel(ConvModel):
 	def load(filepath: str) -> Tuple['CNNModel', Optimizer]:
 		return Model.load(filepath, CNNModel, CNNParams)
 
+	@staticmethod
+	def run_experiment(params: CNNParams, show_results: bool) -> Tuple['Model', Optimizer, str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+		return Model.run_experiment(
+			base_class = CNNModel, 
+			params = params, 
+			show_results = show_results,
+		)
+
 if __name__ == '__main__':
-	model = CNNModel(
-		CNNParams(
+	_ = CNNModel.run_experiment(
+		params = CNNParams(
 			batch_size = 1000,
 			transform_output_src = lambda_to_string(
 				TRANSFORM_OUTPUT,
@@ -210,44 +213,6 @@ if __name__ == '__main__':
 			linear_hidden_sizes = [120, 84],
 			x_dim = None,
 			y_dim = None,
-		)
+		),
+		show_results = True,
 	)
-
-	links_list = Link.load_links(DIRECTORY + '/data/link_data.csv')
-	met_data = MetStation.load_met_data(DIRECTORY + '/data/met_data.csv')
-
-	model.set_link_data(links_list, met_data)
-
-	receptors_list = model.filter_receptors(Receptor.load_receptors(DIRECTORY + '/data/receptor_data.csv'))
-	train_receptors_list, val_receptors_list = train_val_split(receptors_list)
-
-	train_batches = model.make_receptor_batches(partition(train_receptors_list, model.params.batch_size))
-	val_batches = model.make_receptor_batches(partition(val_receptors_list, model.params.batch_size))
-
-	save_location = DIRECTORY + '/Model Saves/model_save_' + strftime('%m-%d-%y %H:%M:%S') + ' ' + NOTEBOOK_NAME
-	print('Save Location: ' + save_location)
-
-	model.train(
-		optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001),
-		num_epochs = 1000,
-		train_batches = train_batches,
-		val_batches = val_batches,
-		save_location = save_location,
-		make_graphs = True
-	)
-
-	best_model, _ = CNNModel.load(save_location)
-	best_model.set_link_data(links_list, met_data)
-
-	batch = val_batches[1]
-	fwd = best_model.forward_batch(batch.receptors)
-	for i in range(5):
-		print((best_model.params.transform_output_inv(fwd[i].item(), batch.nearest_link_distances[i].item()), best_model.params.transform_output_inv(batch.y[i].item(), batch.nearest_link_distances[i].item())))
-
-	print(sum([best_model.get_error(batch.receptors, batch.y) for batch in val_batches])/len(val_batches))
-
-	best_model.graph_prediction_error(val_batches)
-
-	best_model.export_predictions(val_batches, save_location[save_location.rindex('model_save_') + 11:save_location.rindex('.')] + ' Predictions.csv')
-
-	best_model.print_batch_errors(val_batches)

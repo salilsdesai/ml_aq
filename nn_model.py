@@ -1,6 +1,5 @@
 import torch
 
-from time import strftime
 from torch import Tensor
 from torch.optim.optimizer import Optimizer
 from typing import List, Tuple, Dict, Optional, Any
@@ -8,19 +7,16 @@ from typing import List, Tuple, Dict, Optional, Any
 from .model import Model, ReceptorBatch, Params
 from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	lambda_to_string, A, B, TRANSFORM_OUTPUT, TRANSFORM_OUTPUT_INV, \
-	partition, train_val_split
+	Paths
 
-NOTEBOOK_NAME = 'nn_model.py'
-DIRECTORY = '.'
-
-class LinkData():
+class NNLinkData():
 	def __init__(self, coords: Tensor, coords_dot: Tensor, subtract: Tensor, keep: Tensor):
 		self.coords = coords
 		self.coords_dot = coords_dot
 		self.subtract = subtract
 		self.keep = keep
 
-class ReceptorData():
+class NNReceptorData():
 	def __init__(self, coords: Tensor, coords_dot: Tensor, subtract: Tensor):
 		self.coords = coords
 		self.coords_dot = coords_dot
@@ -29,7 +25,7 @@ class ReceptorData():
 class NNReceptorBatch(ReceptorBatch):
 	def __init__(
 		self, 
-		receptors: ReceptorData, 
+		receptors: NNReceptorData, 
 		y: Tensor, 
 		nearest_link_distances: Tensor
 	):
@@ -47,7 +43,7 @@ class NNReceptorBatch(ReceptorBatch):
 	def size(self) -> int:
 		return self.receptors.coords.shape[0]
 
-class NNModelParams(Params):
+class NNParams(Params):
 	def __init__(
 		self,
 		batch_size: int,
@@ -72,8 +68,8 @@ class NNModelParams(Params):
 		self.subtract_features: List[str] = subtract_features
 	
 	@staticmethod
-	def from_dict(d: Dict[str, Any]) -> 'NNModelParams':
-		return NNModelParams(
+	def from_dict(d: Dict[str, Any]) -> 'NNParams':
+		return NNParams(
 			batch_size = d['batch_size'],
 			transform_output_src = d['transform_output_src'],
 			transform_output_inv_src =d['transform_output_inv_src'],
@@ -96,9 +92,9 @@ class NNModelParams(Params):
 		return d
 
 class NNModel(Model):
-	def __init__(self, params: NNModelParams):
+	def __init__(self, params: NNParams):
 		Model.__init__(self, params)
-		self.params: NNModelParams = params
+		self.params: NNParams = params
 		self.feature_stats: Optional[Features.FeatureStats] = None
 		self.input_size = 1 + len(self.params.subtract_features) + len(self.params.link_features)
 		self.layer_1 = torch.nn.Linear(self.input_size, params.hidden_size).to(DEVICE)
@@ -111,7 +107,7 @@ class NNModel(Model):
 		s2 = self.layer_2(a1)
 		return s2.abs()
 
-	def make_x(self, receptors: ReceptorData) -> Tuple[Tensor, Tensor]:
+	def make_x(self, receptors: NNReceptorData) -> Tuple[Tensor, Tensor]:
 		if self.feature_stats is None:
 			raise Exception('Feature Stats Not Set')
 		distances_inv = (self.link_data.coords_dot - (2 * (receptors.coords @ self.link_data.coords)) + receptors.coords_dot).sqrt().reciprocal().unsqueeze(dim=2).type(Tensor).to(DEVICE)
@@ -125,7 +121,7 @@ class NNModel(Model):
 	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> List[ReceptorBatch]:
 		def make_batch(receptors_list: List[Receptor]) -> ReceptorBatch:
 			coords = torch.DoubleTensor([[r.x, r.y] for r in receptors_list]).to(DEVICE)
-			data = ReceptorData(
+			data = NNReceptorData(
 				coords, 
 				(coords * coords).sum(dim=1).unsqueeze(dim=-1), 
 				Tensor([[[
@@ -152,7 +148,7 @@ class NNModel(Model):
 				for f in self.params.link_features
 		] for link in links]]).to(DEVICE).repeat(self.params.batch_size, 1, 1)
 		# If too much memory or need multiple batch sizes, move repeat to make_x (distances.shape[0])
-		self.link_data = LinkData(coords, coords_dot, subtract, keep)
+		self.link_data = NNLinkData(coords, coords_dot, subtract, keep)
 
 	def set_feature_stats(self, all_feature_stats: Dict[str, Features.FeatureStats]) -> None:
 		stats = \
@@ -165,7 +161,7 @@ class NNModel(Model):
 			Tensor([s.std_dev for s in stats]).to(DEVICE),
 		)
 
-	def forward_batch(self, receptors: ReceptorData) -> Tensor:
+	def forward_batch(self, receptors: NNReceptorData) -> Tensor:
 		"""
 		Override
 		"""
@@ -174,11 +170,26 @@ class NNModel(Model):
 
 	@staticmethod
 	def load(filepath: str) -> Tuple['NNModel', Optimizer]:
-		return Model.load(filepath, NNModel, NNModelParams)
+		return Model.load(filepath, NNModel, NNParams)
+	
+	def prep_experiment(self, directory: str) -> None:
+		"""
+		Override
+		"""
+		feature_stats = Features.get_all_feature_stats(Paths.feature_stats(directory))
+		self.set_feature_stats(feature_stats)
+	
+	@staticmethod
+	def run_experiment(params: NNParams, show_results: bool) -> Tuple['Model', Optimizer, str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+		return Model.run_experiment(
+			base_class = NNModel, 
+			params = params, 
+			show_results = show_results,
+		)
 
 if __name__ == '__main__':
-	model = NNModel(
-		NNModelParams(
+	_ = NNModel.run_experiment(
+		params = NNParams(
 			batch_size = 1000,
 			transform_output_src = lambda_to_string(
 				TRANSFORM_OUTPUT,
@@ -199,47 +210,6 @@ if __name__ == '__main__':
 			],
 			hidden_size = 8,
 			subtract_features = [Features.ELEVATION_DIFFERENCE],
-		)
+		),
+		show_results = True,
 	)
-	
-	links_list = Link.load_links(DIRECTORY + '/data/link_data.csv')
-	met_data = MetStation.load_met_data(DIRECTORY + '/data/met_data.csv')
-	feature_stats = Features.get_all_feature_stats(DIRECTORY + '/data/feature_stats.csv')
-
-	model.set_link_data(links_list, met_data)
-	model.set_feature_stats(feature_stats)
-
-	receptors_list = model.filter_receptors(Receptor.load_receptors(DIRECTORY + '/data/receptor_data.csv'))
-	train_receptors_list, val_receptors_list = train_val_split(receptors_list)
-
-	train_batches = model.make_receptor_batches(partition(train_receptors_list, model.params.batch_size))
-	val_batches = model.make_receptor_batches(partition(val_receptors_list, model.params.batch_size))
-
-	save_location = DIRECTORY + '/Model Saves/model_save_' + strftime('%m-%d-%y %H:%M:%S') + ' ' + NOTEBOOK_NAME
-	print('Save Location: ' + save_location)
-
-	model.train(
-		optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001),
-		num_epochs = 1000,
-		train_batches = train_batches,
-		val_batches = val_batches,
-		save_location = save_location,
-		make_graphs = True
-	)
-
-	best_model, _ = NNModel.load(save_location)
-	best_model.set_link_data(links_list, met_data)
-	best_model.set_feature_stats(feature_stats)
-
-	batch = val_batches[1]
-	fwd = best_model.forward_batch(batch.receptors)
-	for i in range(5):
-		print((best_model.params.transform_output_inv(fwd[i].item(), batch.nearest_link_distances[i].item()), best_model.params.transform_output_inv(batch.y[i].item(), batch.nearest_link_distances[i].item())))
-
-	print(sum([best_model.get_error(batch.receptors, batch.y) for batch in val_batches])/len(val_batches))
-
-	best_model.graph_prediction_error(val_batches)
-
-	best_model.export_predictions(val_batches, save_location[save_location.rindex('model_save_') + 11:save_location.rindex('.')] + ' Predictions.csv')
-
-	best_model.print_batch_errors(val_batches)

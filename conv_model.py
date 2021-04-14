@@ -246,6 +246,9 @@ class ConvModel(Model):
 			bin_centers = centers,
 		)
 	
+	def prep_experiment(self, directory: str) -> None:
+		pass  # Don't need to do anything
+	
 	def set_up_on_channel_dims(self, channels: Tensor) -> Tensor:
 		raise NotImplementedError
 	

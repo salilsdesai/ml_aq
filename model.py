@@ -8,11 +8,12 @@ from time import time, strftime, localtime
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.types import Number
-from typing import Callable, List, Tuple, Optional, Dict, Any, TypeVar, Generic
+from typing import Callable, List, Tuple, Optional, Dict, Any, TypeVar, Generic, Type
 
 from .utils import MetStation, mre, loss_function, error_function, Value, \
 	graph_error_function, mult_factor_error, Link, Receptor, Coordinate, \
-	flatten
+	flatten, Paths, NOTEBOOK_NAME, BASE_DIRECTORY, train_val_split, \
+	partition
 
 ReceptorData = TypeVar('ReceptorData')
 LinkData = TypeVar('LinkData')
@@ -82,7 +83,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		"""
 		return [r for r in receptors if (r.nearest_link_distance <= self.params.distance_threshold and r.pollution_concentration >= self.params.concentration_threshold)]
 	
-	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> ReceptorBatch:
+	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> List[ReceptorBatch]:
 		raise NotImplementedError 
 
 	def forward_batch(self, receptors: ReceptorData) -> Tensor:
@@ -98,7 +99,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		y_hat = self.forward_batch(receptors)
 		return error_function(y_hat, y).item()
 
-	def print_batch_errors(self, batches: List[ReceptorBatch]) -> None:
+	def get_errors(self, batches: List[ReceptorBatch]) -> Dict[str, float]:
 		err_funcs = [
 			('Mult Factor', mult_factor_error),
 			('MSE', torch.nn.MSELoss()),
@@ -116,9 +117,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 				)
 				for i in range(len(err_funcs)):
 					errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
-		print('Final Errors:')
-		for i in range(len(err_funcs)):
-			print(err_funcs[i][0] + ': ' + str(errors[i]))
+		return {err_funcs[i][0]: errors[i] for i in range(len(err_funcs))}
 
 	def save(self, filepath: str, optimizer: Optimizer) -> None:
 		torch.save({
@@ -145,7 +144,8 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		train_batches: List[ReceptorBatch], 
 		val_batches: List[ReceptorBatch], 
 		save_location: Optional[str], 
-		make_graphs: bool
+		make_graphs: bool,
+		print_results: bool,
 	):
 		if self.link_data is None:
 			raise Exception('Link Data Not Set')
@@ -154,19 +154,22 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 
 		losses = []
 		val_errors = []
-
+	
 		def get_stats(loss):
 			losses.append(loss / len(train_batches))
-			print('Loss: ' + str(losses[-1]))
+			if print_results:
+				print('Loss: ' + str(losses[-1]))
 			val_errors.append(sum([self.get_error(batch.receptors, batch.y) for batch in val_batches])/len(val_batches))
-			print('Val Error: ' + str(val_errors[-1]))
+			if print_results:
+				print('Val Error: ' + str(val_errors[-1]))
 		
 		with torch.no_grad():
 			get_stats(sum([loss_function(self.forward_batch(batch.receptors), batch.y).item() for batch in train_batches]))
 		
 		if save_location is not None:
 			self.save(save_location, optimizer)
-			print('Saved Model!')
+			if print_results:
+				print('Saved Model!')
 
 		curr_epoch = 0
 		stop_training = False
@@ -179,13 +182,15 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 				epoch_loss += float(loss.item())
 				loss.backward()
 				optimizer.step()
-			print('---------------------------------------------')
-			print('Finished Epoch ' + str(curr_epoch) + ' (' + str(time() - start_time) + ' seconds)')
+			if print_results:
+				print('---------------------------------------------')
+				print('Finished Epoch ' + str(curr_epoch) + ' (' + str(time() - start_time) + ' seconds)')
 			get_stats(epoch_loss)
 			min_error = min(val_errors)
 			if save_location is not None and val_errors[-1] == min_error:
 				self.save(save_location, optimizer)
-				print('Saved Model!')
+				if print_results:
+					print('Saved Model!')
 			curr_epoch += 1
 			# Stop when we've surpassed num_epochs or we haven't improved upon the min val error for three iterations
 			stop_training = (curr_epoch >= num_epochs) or ((curr_epoch >= 3) and (val_errors[-1] > min_error) and (val_errors[-2] > min_error) and (val_errors[-3] > min_error))
@@ -372,3 +377,69 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		for prediction in predictions:
 			out_file.write(format(prediction))
 		out_file.close()
+	
+	def prep_experiment(self, directory: str) -> None:
+		raise NotImplementedError
+
+	def quick_setup(self) -> Tuple[List[ReceptorBatch], List[ReceptorBatch]]:
+		"""
+		Set up model for training/prediction using default data 
+		locations/directory after initializing it
+		Returns tuple of (Train Batches, Val Batches)
+		"""
+		links_list = Link.load_links(Paths.link_data(BASE_DIRECTORY))
+		met_data = MetStation.load_met_data(Paths.met_data(BASE_DIRECTORY))
+		
+		self.set_link_data(links_list, met_data)
+
+		self.prep_experiment(BASE_DIRECTORY)
+
+		receptors_list = self.filter_receptors(Receptor.load_receptors(Paths.receptor_data(BASE_DIRECTORY)))
+		train_receptors_list, val_receptors_list = train_val_split(receptors_list)
+
+		train_batches = self.make_receptor_batches(partition(train_receptors_list, self.params.batch_size))
+		val_batches = self.make_receptor_batches(partition(val_receptors_list, self.params.batch_size))
+
+		return (train_batches, val_batches)
+
+	@staticmethod
+	def run_experiment(base_class: Type['Model'], params: Params, show_results: bool) -> Tuple['Model', Optimizer, str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+		"""
+		Returns
+		- Trained model
+		- The optimizer
+		- Model save location
+		- Dict mapping error function name to error value
+		- Train receptor batches
+		- Validation receptor batches
+		"""
+		
+		model = base_class(params)
+		(train_batches, val_batches) = model.quick_setup()
+
+		save_location = Paths.save(BASE_DIRECTORY, NOTEBOOK_NAME)
+
+		if show_results:
+			print('Save Location: ' + str(save_location))
+		
+		optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
+
+		model.train(
+			optimizer = optimizer,
+			num_epochs = 1000,
+			train_batches = train_batches,
+			val_batches = val_batches,
+			save_location = save_location,
+			make_graphs = True,
+			print_results = show_results,
+		)
+
+		errors = model.get_errors(val_batches)
+
+		if show_results:
+			model.graph_prediction_error(val_batches)
+			for (k, v) in errors.items():
+				print(k + ': ' + str(v))
+		
+		return (model, optimizer, save_location, errors, train_batches, val_batches)
+

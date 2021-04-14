@@ -9,6 +9,8 @@ import sys
 from functools import reduce
 from math import sin, pi
 from operator import iconcat
+from requests import get
+from time import strftime
 from torch import Tensor
 from torch.types import Number
 from typing import Any, Dict, List, Union, Callable, Tuple
@@ -289,3 +291,14 @@ class CumulativeStats:
 		self.n = n1 + n2
 		self.mean = m1 * (n1 / self.n) + m2 * (n2 / self.n)
 		self.stddev = ((s1 ** 2) * (n1 / self.n) + (s2 ** 2) * (n2 / self.n) + ((n1 * n2) / ((n1 + n2) ** 2)) * ((m1 - m2) ** 2)) ** 0.5
+	
+class Paths():
+	link_data: Callable[[str], str] = lambda dir: dir + '/data/link_data.csv'
+	receptor_data: Callable[[str], str] = lambda dir: dir + '/data/receptor_data.csv'
+	met_data: Callable[[str], str] = lambda dir: dir + '/data/met_data.csv'
+	feature_stats: Callable[[str], str] = lambda dir: dir + '/data/feature_stats.csv'
+	save: Callable[[str, str], str] = lambda dir, name: dir + '/Model Saves/model_save_' + strftime('%m-%d-%y %H:%M:%S') + ' ' + name
+
+IN_COLAB = 'google.colab' in sys.modules
+NOTEBOOK_NAME = get('http://172.28.0.2:9000/api/sessions').json()[0]['name'] if IN_COLAB else sys.argv[0]
+BASE_DIRECTORY = '/content/gdrive/MyDrive/Senior Fall/MEng Project' if IN_COLAB else '.'
