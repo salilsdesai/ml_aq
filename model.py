@@ -41,7 +41,6 @@ class ReceptorBatch(Generic[ReceptorData]):
 class Params():
 	def __init__(
 		self,
-		hidden_size: int,
 		batch_size: int,
 		transform_output_src: str,
 		transform_output_inv_src: str,
@@ -49,7 +48,6 @@ class Params():
 		distance_threshold: float,
 		link_features: List[str]
 	):
-		self.hidden_size: int = hidden_size
 		self.batch_size: int = batch_size
 		self.transform_output_src: str = transform_output_src
 		transform_output: Callable[[Value, Value], Value] = eval(transform_output_src)
@@ -63,7 +61,6 @@ class Params():
 	
 	def as_dict(self) -> Dict[str, Any]:
 		d = {
-			'hidden_size': self.hidden_size,
 			'batch_size': self.batch_size,
 			'transform_output_src': self.transform_output_src,
 			'transform_output_inv_src': self.transform_output_inv_src,

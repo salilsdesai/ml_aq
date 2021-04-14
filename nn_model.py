@@ -5,12 +5,12 @@ from torch import Tensor
 from torch.optim.optimizer import Optimizer
 from typing import List, Tuple, Dict, Optional, Any
 
-from .model import Model, ReceptorBatch, ModelParams
+from .model import Model, ReceptorBatch, Params
 from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	lambda_to_string, A, B, TRANSFORM_OUTPUT, TRANSFORM_OUTPUT_INV, \
 	partition, train_val_split
 
-NOTEBOOK_NAME = 'nn_mode.py'
+NOTEBOOK_NAME = 'nn_model.py'
 DIRECTORY = '.'
 
 class LinkData():
@@ -47,21 +47,20 @@ class NNReceptorBatch(ReceptorBatch):
 	def size(self) -> int:
 		return self.receptors.coords.shape[0]
 
-class NNModelParams(ModelParams):
+class NNModelParams(Params):
 	def __init__(
 		self,
-		hidden_size: int,
 		batch_size: int,
 		transform_output_src: str,
 		transform_output_inv_src: str,
 		concentration_threshold: float,
 		distance_threshold: float,
 		link_features: List[str],
+		hidden_size: int,
 		subtract_features: List[str],
 	):
-		ModelParams.__init__(
+		Params.__init__(
 			self,
-			hidden_size=hidden_size,
 			batch_size=batch_size,
 			transform_output_src=transform_output_src,
 			transform_output_inv_src=transform_output_inv_src,
@@ -69,23 +68,27 @@ class NNModelParams(ModelParams):
 			distance_threshold=distance_threshold,
 			link_features=link_features
 		)
+		self.hidden_size: int = hidden_size
 		self.subtract_features: List[str] = subtract_features
 	
 	@staticmethod
 	def from_dict(d: Dict[str, Any]) -> 'NNModelParams':
 		return NNModelParams(
-			hidden_size = d['hidden_size'],
 			batch_size = d['batch_size'],
 			transform_output_src = d['transform_output_src'],
 			transform_output_inv_src =d['transform_output_inv_src'],
 			concentration_threshold = d['concentration_threshold'],
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
+			hidden_size = d['hidden_size'],
 			subtract_features = d['subtract_features'],
 		)
 	
 	def child_dict(self) -> Dict[str, Any]:
-		return {'subtract_features': self.subtract_features}
+		return {
+			'hidden_size': self.hidden_size,
+			'subtract_features': self.subtract_features,
+		}
 
 class NNModel(Model):
 	def __init__(self, params: NNModelParams):
@@ -170,7 +173,6 @@ class NNModel(Model):
 
 model = NNModel(
 	NNModelParams(
-		hidden_size = 8,
 		batch_size = 1000,
 		transform_output_src = lambda_to_string(
 			TRANSFORM_OUTPUT,
@@ -189,6 +191,7 @@ model = NNModel(
 			Features.WIND_DIRECTION, Features.WIND_SPEED,
 			Features.UP_DOWN_WIND_EFFECT,
 		],
+		hidden_size = 8,
 		subtract_features = [Features.ELEVATION_DIFFERENCE],
 	)
 )

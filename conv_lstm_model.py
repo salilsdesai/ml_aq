@@ -22,7 +22,6 @@ class ConvLSTMReceptorData(ConvReceptorData):
 class ConvLSTMParams(ConvParams):
 	def __init__(
 		self,
-		hidden_size: int,
 		batch_size: int,
 		transform_output_src: str,
 		transform_output_inv_src: str,
@@ -36,7 +35,6 @@ class ConvLSTMParams(ConvParams):
 		num_out_channels: int,
 	):
 		super(ConvLSTMParams, self).__init__(
-			hidden_size=hidden_size,
 			batch_size=batch_size,
 			transform_output_src=transform_output_src,
 			transform_output_inv_src=transform_output_inv_src,
@@ -53,7 +51,6 @@ class ConvLSTMParams(ConvParams):
 	@staticmethod
 	def from_dict(d: Dict[str, Any]) -> 'ConvLSTMParams':
 		return ConvLSTMParams(
-			hidden_size = d['hidden_size'],
 			batch_size = d['batch_size'],
 			transform_output_src = d['transform_output_src'],
 			transform_output_inv_src = d['transform_output_inv_src'],
@@ -249,7 +246,6 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 if __name__ == '__main__':
 	model = ConvLSTMModel(
 		ConvLSTMParams(
-			hidden_size = 8,
 			batch_size = 1000,
 			transform_output_src = lambda_to_string(
 				TRANSFORM_OUTPUT,

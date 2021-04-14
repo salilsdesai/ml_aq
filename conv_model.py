@@ -39,7 +39,6 @@ class ConvReceptorBatch(ReceptorBatch):
 class ConvParams(Params):
 	def __init__(
 		self,
-		hidden_size: int,
 		batch_size: int,
 		transform_output_src: str,
 		transform_output_inv_src: str,
@@ -53,7 +52,6 @@ class ConvParams(Params):
 	):
 		Params.__init__(
 			self,
-			hidden_size=hidden_size,
 			batch_size=batch_size,
 			transform_output_src=transform_output_src,
 			transform_output_inv_src=transform_output_inv_src,
@@ -70,7 +68,6 @@ class ConvParams(Params):
 	@staticmethod
 	def from_dict(d: Dict[str, Any]) -> 'ConvParams':
 		return ConvParams(
-			hidden_size = d['hidden_size'],
 			batch_size = d['batch_size'],
 			transform_output_src = d['transform_output_src'],
 			transform_output_inv_src = d['transform_output_inv_src'],
