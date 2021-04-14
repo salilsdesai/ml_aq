@@ -2,7 +2,7 @@ import torch
 
 from torch import Tensor
 from torch.optim.optimizer import Optimizer
-from typing import List, Tuple, Dict, Optional, Any
+from typing import List, Tuple, Dict, Optional, Any, Callable
 
 from .conv_model import ConvModel, ConvParams, ConvReceptorData
 from .model import Model, ReceptorBatch
@@ -245,10 +245,15 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 		return Model.load(filepath, ConvLSTMModel, ConvLSTMParams)
 
 	@staticmethod
-	def run_experiment(params: ConvLSTMParams, show_results: bool) -> Tuple['Model', Optimizer, str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+	def run_experiment(
+		params: ConvLSTMParams, 
+		make_optimizer: Callable[[torch.nn.Module], Optimizer], 
+		show_results: bool
+	) -> Tuple[str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
 		return Model.run_experiment(
-			base_class = ConvLSTMModel, 
+			base_class = ConvLSTMModel,
 			params = params, 
+			make_optimizer = make_optimizer,
 			show_results = show_results,
 		)
 
@@ -279,5 +284,6 @@ if __name__ == '__main__':
 			time_periods = [''],
 			num_out_channels = 64,
 		),
+		make_optimizer = lambda m: torch.optim.AdamW(m.parameters(), lr=0.0001),
 		show_results = True,
 	)

@@ -403,11 +403,14 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		return (train_batches, val_batches)
 
 	@staticmethod
-	def run_experiment(base_class: Type['Model'], params: Params, show_results: bool) -> Tuple['Model', Optimizer, str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+	def run_experiment(
+		base_class: Type['Model'], 
+		params: Params,
+		make_optimizer: Callable[[torch.nn.Module], Optimizer], 
+		show_results: bool
+	) -> Tuple[str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
 		"""
 		Returns
-		- Trained model
-		- The optimizer
 		- Model save location
 		- Dict mapping error function name to error value
 		- Train receptor batches
@@ -422,10 +425,8 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		if show_results:
 			print('Save Location: ' + str(save_location))
 		
-		optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
-
 		model.train(
-			optimizer = optimizer,
+			optimizer = make_optimizer(model),
 			num_epochs = 1000,
 			train_batches = train_batches,
 			val_batches = val_batches,
@@ -441,5 +442,5 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			for (k, v) in errors.items():
 				print(k + ': ' + str(v))
 		
-		return (model, optimizer, save_location, errors, train_batches, val_batches)
+		return (save_location, errors, train_batches, val_batches)
 
