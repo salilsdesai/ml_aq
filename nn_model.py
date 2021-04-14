@@ -171,35 +171,9 @@ class NNModel(Model):
 	def load(filepath: str) -> Tuple['NNModel', Optimizer]:
 		return Model.load(filepath, NNModel, NNModelParams)
 
-model = NNModel(
-	NNModelParams(
-		batch_size = 1000,
-		transform_output_src = lambda_to_string(
-			TRANSFORM_OUTPUT,
-			[('A', str(A)), ('B', str(B))]
-		),
-		transform_output_inv_src = lambda_to_string(
-			TRANSFORM_OUTPUT_INV,
-			[('A', str(A)), ('B', str(B))]
-		),
-		concentration_threshold = 0.01,
-		distance_threshold = 500,
-		link_features = [
-			Features.VMT, Features.TRAFFIC_SPEED, Features.FLEET_MIX_LIGHT,
-			Features.FLEET_MIX_MEDIUM, Features.FLEET_MIX_HEAVY,
-			Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
-			Features.WIND_DIRECTION, Features.WIND_SPEED,
-			Features.UP_DOWN_WIND_EFFECT,
-		],
-		hidden_size = 8,
-		subtract_features = [Features.ELEVATION_DIFFERENCE],
-	)
-)
-
 if __name__ == '__main__':
 	model = NNModel(
 		NNModelParams(
-			hidden_size = 8,
 			batch_size = 1000,
 			transform_output_src = lambda_to_string(
 				TRANSFORM_OUTPUT,
@@ -218,6 +192,7 @@ if __name__ == '__main__':
 				Features.WIND_DIRECTION, Features.WIND_SPEED,
 				Features.UP_DOWN_WIND_EFFECT,
 			],
+			hidden_size = 8,
 			subtract_features = [Features.ELEVATION_DIFFERENCE],
 		)
 	)
