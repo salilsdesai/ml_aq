@@ -84,11 +84,16 @@ class NNModelParams(Params):
 			subtract_features = d['subtract_features'],
 		)
 	
-	def child_dict(self) -> Dict[str, Any]:
-		return {
+	def as_dict(self) -> Dict[str, Any]:
+		"""
+		Override
+		"""
+		d = super().as_dict()
+		d.update({
 			'hidden_size': self.hidden_size,
 			'subtract_features': self.subtract_features,
-		}
+		})
+		return d
 
 class NNModel(Model):
 	def __init__(self, params: NNModelParams):

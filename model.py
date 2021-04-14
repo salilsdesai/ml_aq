@@ -60,7 +60,7 @@ class Params():
 		self.link_features = link_features
 	
 	def as_dict(self) -> Dict[str, Any]:
-		d = {
+		return {
 			'batch_size': self.batch_size,
 			'transform_output_src': self.transform_output_src,
 			'transform_output_inv_src': self.transform_output_inv_src,
@@ -68,11 +68,6 @@ class Params():
 			'distance_threshold': self.distance_threshold,
 			'link_features': self.link_features
 		}
-		d.update(self.child_dict())
-		return d
-
-	def child_dict(self) -> Dict[str, Any]:
-		raise NotImplementedError
 
 
 class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):

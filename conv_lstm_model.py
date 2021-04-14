@@ -67,11 +67,16 @@ class ConvLSTMParams(ConvParams):
 			num_out_channels = d['num_out_channels'],
 		)
 	
-	def child_dict(self) -> Dict[str, Any]:
-		return {
+	def as_dict(self) -> Dict[str, Any]:
+		"""
+		Override
+		"""
+		d = super().as_dict()
+		d.update({
 			'time_periods': self.time_periods,
 			'num_out_channels': self.num_out_channels,
-		}
+		})
+		return d
 
 class ConvLSTMCell(torch.nn.Module):
 	"""
@@ -215,7 +220,7 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 		"""
 		return self.params.time_periods
 	
-	def fix_channel_dims(self, channels: Tensor) -> Tensor:
+	def set_up_on_channel_dims(self, channels: Tensor) -> Tensor:
 		"""
 		Override
 		"""

@@ -80,23 +80,26 @@ class ConvParams(Params):
 			)  if d['distances_feature_stats'] is not None else None,
 		)
 	
-	def child_dict(self) -> Dict[str, Any]:
-		return {
+	def as_dict(self) -> Dict[str, Any]:
+		"""
+		Override
+		"""
+		d = super().as_dict()
+		d.update({
 			'approx_bin_size': self.approx_bin_size,
 			'kernel_size': self.kernel_size,
 			'distances_feature_stats': (
 				self.distance_feature_stats.mean, 
 				self.distance_feature_stats.std_dev
 			) if self.distance_feature_stats is not None else None,
-		}
+		})
+		return d
 
 class ConvModel(Model):
 	def __init__(self, params: ConvParams):
 		Model.__init__(self, params)
 		self.params: ConvParams = params
 		self.input_size: int = 1 + len(self.params.link_features)  # +1 for distance
-		self.approx_bin_size: float = params.approx_bin_size
-		self.kernel_size: int = params.kernel_size
 
 	def get_receptor_locations(self, receptors_list: List[Receptor]) -> Tuple[List[List[float]], Tensor]:
 		"""
@@ -238,12 +241,12 @@ class ConvModel(Model):
 		centers = torch.cartesian_prod(x_centers, y_centers).reshape(x_centers.shape[0], y_centers.shape[0], 2).unsqueeze(dim=0)
 
 		self.link_data = ConvLinkData(
-			channels = self.fix_channel_dims(channels),
+			channels = self.set_up_on_channel_dims(channels),
 			bin_counts = counts,
 			bin_centers = centers,
 		)
 	
-	def fix_channel_dims(self, channels: Tensor) -> Tensor:
+	def set_up_on_channel_dims(self, channels: Tensor) -> Tensor:
 		raise NotImplementedError
 	
 	def make_receptor_data(self, distances: Tensor) -> ConvReceptorData:
