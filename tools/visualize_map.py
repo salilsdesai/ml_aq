@@ -35,7 +35,7 @@ def scatter_receptors():
 def scatter_links():
     file = open('data/ML_AQ/Met_1_1.csv', 'r')
     itr = iter(file)
-    itr.readline()  # Skip header line
+    next(itr)  # Skip header line
     scatter(
         itr,
         lambda item: ((lambda splits: (float(splits[4]), float(splits[5])) if splits[1] != '246543' else None)(item.split(','))),
