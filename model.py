@@ -47,7 +47,8 @@ class Params():
 		transform_output_inv_src: str,
 		concentration_threshold: float,
 		distance_threshold: float,
-		link_features: List[str]
+		link_features: List[str],
+		receptor_features: List[str],
 	):
 		self.batch_size: int = batch_size
 		self.transform_output_src: str = transform_output_src
@@ -56,9 +57,10 @@ class Params():
 		self.transform_output_inv_src: str = transform_output_inv_src
 		transform_output_inv: Callable[[Value, Value], Value] = eval(transform_output_inv_src)
 		self.transform_output_inv: Callable[[Value, Value], Value] = transform_output_inv
-		self.concentration_threshold = concentration_threshold
-		self.distance_threshold = distance_threshold
-		self.link_features = link_features
+		self.concentration_threshold: float = concentration_threshold
+		self.distance_threshold: float = distance_threshold
+		self.link_features: List[str] = link_features
+		self.receptor_features: List[str] = receptor_features
 	
 	def as_dict(self) -> Dict[str, Any]:
 		return {
@@ -67,7 +69,8 @@ class Params():
 			'transform_output_inv_src': self.transform_output_inv_src,
 			'concentration_threshold': self.concentration_threshold,
 			'distance_threshold': self.distance_threshold,
-			'link_features': self.link_features
+			'link_features': self.link_features,
+			'receptor_features': self.receptor_features,
 		}
 
 

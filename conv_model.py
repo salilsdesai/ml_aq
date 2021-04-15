@@ -3,8 +3,8 @@ import torch
 from torch import Tensor
 from typing import List, Tuple, Dict, Optional, Any
 
-from .model import Model, ReceptorBatch, Params
-from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
+from model import Model, ReceptorBatch, Params
+from utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	partition, flatten, CumulativeStats
 
 class ConvLinkData():
@@ -14,8 +14,9 @@ class ConvLinkData():
 		self.bin_centers: Tensor = bin_centers
 
 class ConvReceptorData():
-	def __init__(self, distances: Tensor):
+	def __init__(self, distances: Tensor, keep: Tensor):
 		self.distances: Tensor = distances
+		self.keep: Tensor = keep
 
 class ConvReceptorBatch(ReceptorBatch):
 	def __init__(
@@ -45,6 +46,7 @@ class ConvParams(Params):
 		concentration_threshold: float,
 		distance_threshold: float,
 		link_features: List[str],
+		receptor_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats]
@@ -56,7 +58,8 @@ class ConvParams(Params):
 			transform_output_inv_src=transform_output_inv_src,
 			concentration_threshold=concentration_threshold,
 			distance_threshold=distance_threshold,
-			link_features=link_features
+			link_features=link_features,
+			receptor_features=receptor_features,
 		)
 		self.approx_bin_size: float = approx_bin_size
 		self.kernel_size: int = kernel_size
@@ -72,6 +75,7 @@ class ConvParams(Params):
 			concentration_threshold = d['concentration_threshold'],
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
+			receptor_features = d['receptor_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
 			distance_feature_stats = Features.FeatureStats(
@@ -99,7 +103,7 @@ class ConvModel(Model):
 	def __init__(self, params: ConvParams):
 		Model.__init__(self, params)
 		self.params: ConvParams = params
-		self.input_size: int = 1 + len(self.params.link_features)  # +1 for distance
+		self.input_size: int = 1 + len(self.params.link_features) + len(self.params.receptor_features) # +1 for distance
 
 	def get_receptor_locations(self, receptors_list: List[Receptor]) -> Tuple[List[List[float]], Tensor]:
 		"""
@@ -132,7 +136,14 @@ class ConvModel(Model):
 		def make_batch(receptors_list: List[Receptor]) -> ReceptorBatch:
 			coords_list, distances = self.get_receptor_locations(receptors_list)
 
-			data = self.make_receptor_data(distances)
+			keep = Tensor([[
+				Features.GET_RECEPTOR_FEATURE[f](r) \
+					for f in self.params.receptor_features
+			] for r in receptors_list]).to(DEVICE)  # num receptors x num features
+			keep = keep.unsqueeze(dim=2).unsqueeze(dim=3)
+
+			data = self.make_receptor_data(distances=distances, keep=keep)
+
 			y = Tensor([[self.params.transform_output(r.pollution_concentration, r.nearest_link_distance)] for r in receptors_list]).to(DEVICE)
 			nearest_link_distances = Tensor([[r.nearest_link_distance] for r in receptors_list]).to(DEVICE)
 			coordinates = [Coordinate(c[0], c[1]) for c in coords_list]
@@ -252,7 +263,11 @@ class ConvModel(Model):
 	def set_up_on_channel_dims(self, channels: Tensor) -> Tensor:
 		raise NotImplementedError
 	
-	def make_receptor_data(self, distances: Tensor) -> ConvReceptorData:
+	def make_receptor_data(self, distances: Tensor, keep: Tensor) -> ConvReceptorData:
+		"""
+		Distances is (# receptors) x (num bins x) x (num bins y)
+		Keep is (# receptors) x (# channels) x (1) x (1)
+		"""
 		raise NotImplementedError()
 	
 	def get_time_periods(self) -> List[str]:

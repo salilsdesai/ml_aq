@@ -10,8 +10,8 @@ from .utils import Features, DEVICE, lambda_to_string, A, B, TRANSFORM_OUTPUT, \
 	TRANSFORM_OUTPUT_INV
 
 class ConvLSTMReceptorData(ConvReceptorData):
-	def __init__(self, distances: Tensor, closest_filter: Tensor):
-		super(ConvLSTMReceptorData, self).__init__(distances=distances)
+	def __init__(self, distances: Tensor, keep: Tensor, closest_filter: Tensor):
+		super(ConvLSTMReceptorData, self).__init__(distances=distances, keep=keep)
 		self.closest_filter: Tensor = closest_filter
 
 class ConvLSTMParams(ConvParams):
@@ -23,6 +23,7 @@ class ConvLSTMParams(ConvParams):
 		concentration_threshold: float,
 		distance_threshold: float,
 		link_features: List[str],
+		receptor_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats],
@@ -36,6 +37,7 @@ class ConvLSTMParams(ConvParams):
 			concentration_threshold=concentration_threshold,
 			distance_threshold=distance_threshold,
 			link_features=link_features,
+			receptor_features=receptor_features,
 			approx_bin_size=approx_bin_size,
 			kernel_size=kernel_size,
 			distance_feature_stats=distance_feature_stats,
@@ -52,6 +54,7 @@ class ConvLSTMParams(ConvParams):
 			concentration_threshold = d['concentration_threshold'],
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
+			receptor_features = d['receptor_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
 			distance_feature_stats = Features.FeatureStats(
@@ -222,20 +225,31 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 		return channels
 	
 	
-	def make_receptor_data(self, distances: Tensor) -> ConvLSTMReceptorData:
+	def make_receptor_data(self, distances: Tensor, keep: Tensor) -> ConvLSTMReceptorData:
 		"""
 		Override
 		"""
 		distances = distances.unsqueeze(dim=1).unsqueeze(dim=1)
 		closest_filter = (distances <= distances.amin(dim=(3, 4)).unsqueeze(dim=3).unsqueeze(dim=4))
-		return ConvLSTMReceptorData(distances, closest_filter)
-
+		return ConvLSTMReceptorData(
+			distances=distances, 
+			keep=keep.unsqueeze(dim=1), 
+			closest_filter=closest_filter,
+		)
 
 	def forward_batch(self, receptors: ConvLSTMReceptorData) -> Tensor:
 		"""
 		Override
 		"""
-		x = torch.cat((receptors.distances.repeat(1, len(self.get_time_periods()), 1, 1, 1), self.link_data.channels), dim=2)
+		num_time_periods = len(self.get_time_periods())
+		x = torch.cat(
+			tensors=(
+				receptors.distances.repeat(1, num_time_periods, 1, 1, 1), 
+				self.link_data.channels,
+				receptors.keep.repeat(1, num_time_periods, 1, self.link_data.bin_counts.shape[0], self.link_data.bin_counts.shape[1]),
+			), 
+			dim=2
+		)
 		fwd = self.forward(x)
 		filtered = (fwd * receptors.closest_filter).squeeze(1) * self.link_data.bin_counts
 		return filtered.sum(dim=2).sum(dim=2)
@@ -277,6 +291,9 @@ if __name__ == '__main__':
 				Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
 				Features.WIND_DIRECTION, Features.WIND_SPEED,
 				Features.UP_DOWN_WIND_EFFECT,
+			],
+			receptor_features = [
+				Features.NEAREST_LINK_DISTANCE,
 			],
 			approx_bin_size = 1000,
 			kernel_size = 3,

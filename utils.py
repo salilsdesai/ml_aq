@@ -162,6 +162,7 @@ class Coordinate():
 
 class Features():
 	
+	# Link Features
 	VMT = 'vmt'
 	TRAFFIC_SPEED = 'traffic_speed'
 	FLEET_MIX_LIGHT = 'fleet_mix_light'
@@ -178,7 +179,11 @@ class Features():
 	TEMPERATURE = 'temperature'
 	RELATIVE_HUMIDITY = 'relative_humidity'
 	
+	# Difference Features
 	ELEVATION_DIFFERENCE = 'elevation_difference'
+
+	# Receptor Features
+	NEAREST_LINK_DISTANCE = 'nearest_link_distance'
 
 	GET_FEATURE: Dict[str, Callable[[Link, Dict[int, MetStation]], float]] = {
 		VMT: lambda link, met_data: link.traffic_flow * link.link_length,
@@ -217,6 +222,10 @@ class Features():
 		WIND_DIRECTION: lambda link, suffix, met_data: getattr(met_data[link.nearest_met_station_id], Features.WIND_DIRECTION + suffix),
 		WIND_SPEED: lambda link, suffix, met_data: getattr(met_data[link.nearest_met_station_id], Features.WIND_SPEED + suffix),
 		UP_DOWN_WIND_EFFECT: lambda link, suffix, met_data: abs(sin((getattr(met_data[link.nearest_met_station_id], Features.WIND_DIRECTION + suffix) - link.angle) * pi / 180)),
+	}
+
+	GET_RECEPTOR_FEATURE: Dict[str, Callable[[Receptor], float]] = {
+		NEAREST_LINK_DISTANCE: (lambda receptor: receptor.nearest_link_distance)
 	}
 
 	class FeatureStats():

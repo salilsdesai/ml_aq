@@ -19,6 +19,7 @@ class CNNParams(ConvParams):
 		concentration_threshold: float,
 		distance_threshold: float,
 		link_features: List[str],
+		receptor_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats],
@@ -35,6 +36,7 @@ class CNNParams(ConvParams):
 			concentration_threshold=concentration_threshold,
 			distance_threshold=distance_threshold,
 			link_features=link_features,
+			receptor_features=receptor_features,
 			approx_bin_size=approx_bin_size,
 			kernel_size=kernel_size,
 			distance_feature_stats=distance_feature_stats,
@@ -54,6 +56,7 @@ class CNNParams(ConvParams):
 			concentration_threshold = d['concentration_threshold'],
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
+			receptor_features= d['receptor_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
 			distance_feature_stats = Features.FeatureStats(
@@ -154,11 +157,14 @@ class CNNModel(ConvModel):
 		return channels.squeeze(dim=1)
 	
 	
-	def make_receptor_data(self, distances: Tensor) -> ConvReceptorData:
+	def make_receptor_data(self, distances: Tensor, keep: Tensor) -> ConvReceptorData:
 		"""
 		Override
 		"""
-		return ConvReceptorData(distances=distances.unsqueeze(dim=1))
+		return ConvReceptorData(
+			distances=distances.unsqueeze(dim=1),
+			keep=keep,
+		)
 
 
 	def forward_batch(self, receptors: ConvReceptorData) -> Tensor:
@@ -167,7 +173,11 @@ class CNNModel(ConvModel):
 		"""
 		return self.forward(
 			torch.cat(
-				tensors = (receptors.distances, self.link_data.channels), 
+				tensors = (
+					receptors.distances, 
+					self.link_data.channels,
+					receptors.keep.repeat(1, 1, self.link_data.bin_counts.shape[0], self.link_data.bin_counts.shape[1]),
+				), 
 				dim = 1,
 			)
 		)
@@ -209,6 +219,9 @@ if __name__ == '__main__':
 				Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
 				Features.WIND_DIRECTION, Features.WIND_SPEED,
 				Features.UP_DOWN_WIND_EFFECT,
+			],
+			receptor_features = [
+				Features.NEAREST_LINK_DISTANCE,
 			],
 			approx_bin_size = 1000,
 			kernel_size = 5,

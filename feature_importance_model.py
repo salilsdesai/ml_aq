@@ -47,7 +47,7 @@ class FeatureImportanceModel(NNModel):
 				attributions_list.append(attr.sum(dim=1))
 		
 		importances = torch.cat(tensors=attributions_list, dim=0).mean(dim=0)
-		feature_names = ['distance_inverse'] + model.params.subtract_features + model.params.link_features
+		feature_names = ['distance_inverse'] + model.params.subtract_features + model.params.link_features + model.params.receptor_features
 		if len(feature_names) != importances.shape[0]:
 			feature_names = ['?' for _ in range(importances.shape[0])]
 		return [(feature_names[i], importances[i].item()) for i in range(importances.shape[0])]
@@ -65,13 +65,18 @@ if __name__ == '__main__':
 				Features.VMT, Features.TRAFFIC_SPEED, Features.FLEET_MIX_LIGHT,
 				Features.FLEET_MIX_MEDIUM, Features.FLEET_MIX_HEAVY,
 				Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
-				Features.WIND_DIRECTION, Features.UP_DOWN_WIND_EFFECT,
+				Features.WIND_SPEED, Features.UP_DOWN_WIND_EFFECT,
 				Features.POPULATION_DENSITY, Features.ELEVATION_MEAN,
 				Features.NEAREST_MET_STATION_DISTANCE, Features.TEMPERATURE,
 				Features.RELATIVE_HUMIDITY,
 			],
+			receptor_features = [
+				Features.NEAREST_LINK_DISTANCE,
+			],
 			hidden_size = 8,
-			subtract_features = [Features.ELEVATION_DIFFERENCE],
+			subtract_features = [
+				Features.ELEVATION_DIFFERENCE,
+			],
 		),
 		make_optimizer = lambda m: torch.optim.AdamW(m.parameters(), lr=0.001),
 		show_results = True,

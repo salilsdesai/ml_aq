@@ -17,10 +17,11 @@ class NNLinkData():
 		self.keep = keep
 
 class NNReceptorData():
-	def __init__(self, coords: Tensor, coords_dot: Tensor, subtract: Tensor):
-		self.coords = coords
-		self.coords_dot = coords_dot
-		self.subtract = subtract
+	def __init__(self, coords: Tensor, coords_dot: Tensor, subtract: Tensor, keep: Tensor):
+		self.coords: Tensor = coords
+		self.coords_dot: Tensor = coords_dot
+		self.subtract: Tensor = subtract
+		self.keep: Tensor = keep
 
 class NNReceptorBatch(ReceptorBatch):
 	def __init__(
@@ -52,6 +53,7 @@ class NNParams(Params):
 		concentration_threshold: float,
 		distance_threshold: float,
 		link_features: List[str],
+		receptor_features: List[str],
 		hidden_size: int,
 		subtract_features: List[str],
 	):
@@ -62,7 +64,8 @@ class NNParams(Params):
 			transform_output_inv_src=transform_output_inv_src,
 			concentration_threshold=concentration_threshold,
 			distance_threshold=distance_threshold,
-			link_features=link_features
+			link_features=link_features,
+			receptor_features=receptor_features,
 		)
 		self.hidden_size: int = hidden_size
 		self.subtract_features: List[str] = subtract_features
@@ -76,6 +79,7 @@ class NNParams(Params):
 			concentration_threshold = d['concentration_threshold'],
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
+			receptor_features = d['receptor_features'],
 			hidden_size = d['hidden_size'],
 			subtract_features = d['subtract_features'],
 		)
@@ -96,7 +100,7 @@ class NNModel(Model):
 		Model.__init__(self, params)
 		self.params: NNParams = params
 		self.feature_stats: Optional[Features.FeatureStats] = None
-		self.input_size = 1 + len(self.params.subtract_features) + len(self.params.link_features)
+		self.input_size = 1 + len(self.params.subtract_features) + len(self.params.link_features) + len(self.params.receptor_features)
 		self.layer_1 = torch.nn.Linear(self.input_size, params.hidden_size).to(DEVICE)
 		self.activ = torch.nn.Sigmoid().to(DEVICE)
 		self.layer_2 = torch.nn.Linear(self.params.hidden_size, 1).to(DEVICE)
@@ -112,8 +116,9 @@ class NNModel(Model):
 			raise Exception('Feature Stats Not Set')
 		distances_inv = (self.link_data.coords_dot - (2 * (receptors.coords @ self.link_data.coords)) + receptors.coords_dot).sqrt().reciprocal().unsqueeze(dim=2).type(Tensor).to(DEVICE)
 		subtracted = self.link_data.subtract - receptors.subtract
-		kept = self.link_data.keep
-		cat = torch.cat((distances_inv, subtracted, kept), dim=-1)
+		links_kept = self.link_data.keep
+		receptors_kept = receptors.keep.unsqueeze(dim=1).repeat(1, self.link_data.keep.shape[1], 1)
+		cat = torch.cat((distances_inv, subtracted, links_kept, receptors_kept), dim=-1)
 		normalized = (cat - self.feature_stats.mean)/self.feature_stats.std_dev
 		filter = distances_inv > (1/self.params.distance_threshold)
 		return (normalized, filter)
@@ -122,12 +127,16 @@ class NNModel(Model):
 		def make_batch(receptors_list: List[Receptor]) -> ReceptorBatch:
 			coords = torch.DoubleTensor([[r.x, r.y] for r in receptors_list]).to(DEVICE)
 			data = NNReceptorData(
-				coords, 
-				(coords * coords).sum(dim=1).unsqueeze(dim=-1), 
-				Tensor([[[
+				coords=coords,
+				coords_dot=(coords * coords).sum(dim=1).unsqueeze(dim=-1), 
+				subtract=Tensor([[[
 					Features.GET_FEATURE_DIFFERENCE_RECEPTOR_DATA[f](r) \
 						for f in self.params.subtract_features
-				]] for r in receptors_list]).to(DEVICE)
+				]] for r in receptors_list]).to(DEVICE),
+				keep=torch.Tensor([[
+					Features.GET_RECEPTOR_FEATURE[f](r) \
+						for f in self.params.receptor_features
+				] for r in receptors_list]).to(DEVICE),
 			)
 			return NNReceptorBatch(
 				data,
@@ -154,7 +163,8 @@ class NNModel(Model):
 		stats = \
 			[all_feature_stats['distance_inverse']] + \
 			[all_feature_stats[sf] for sf in self.params.subtract_features] + \
-			[all_feature_stats[lf] for lf in self.params.link_features]
+			[all_feature_stats[lf] for lf in self.params.link_features] + \
+			[all_feature_stats[rf] for rf in self.params.receptor_features]
 
 		self.feature_stats = Features.FeatureStats(
 			Tensor([s.mean for s in stats]).to(DEVICE),
@@ -213,8 +223,13 @@ if __name__ == '__main__':
 				Features.WIND_DIRECTION, Features.WIND_SPEED,
 				Features.UP_DOWN_WIND_EFFECT,
 			],
+			receptor_features = [
+				Features.NEAREST_LINK_DISTANCE,
+			],
 			hidden_size = 8,
-			subtract_features = [Features.ELEVATION_DIFFERENCE],
+			subtract_features = [
+				Features.ELEVATION_DIFFERENCE,
+			],
 		),
 		make_optimizer = lambda m: torch.optim.AdamW(m.parameters(), lr=0.0001),
 		show_results = True,
