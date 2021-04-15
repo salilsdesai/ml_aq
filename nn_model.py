@@ -170,7 +170,7 @@ class NNModel(Model):
 
 	@staticmethod
 	def load(filepath: str) -> Tuple['NNModel', Optimizer]:
-		return Model.load(filepath, NNModel, NNParams)
+		return Model.load_with_classes(filepath, NNModel, NNParams)
 	
 	def prep_experiment(self, directory: str) -> None:
 		"""
@@ -184,7 +184,7 @@ class NNModel(Model):
 		params: NNParams, 
 		make_optimizer: Callable[[torch.nn.Module], Optimizer], 
 		show_results: bool
-	) -> Tuple[str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+	) -> Tuple['Model', List[ReceptorBatch], Dict[str, float], str]:
 		return Model.run_experiment(
 			base_class = NNModel, 
 			params = params, 

@@ -174,14 +174,14 @@ class CNNModel(ConvModel):
 	
 	@staticmethod
 	def load(filepath: str) -> Tuple['CNNModel', Optimizer]:
-		return Model.load(filepath, CNNModel, CNNParams)
+		return Model.load_with_classes(filepath, CNNModel, CNNParams)
 
 	@staticmethod
 	def run_experiment(
 		params: CNNParams, 
 		make_optimizer: Callable[[torch.nn.Module], Optimizer], 
 		show_results: bool
-	) -> Tuple[str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+	) -> Tuple['Model', List[ReceptorBatch], Dict[str, float], str]:
 		return Model.run_experiment(
 			base_class = CNNModel, 
 			params = params, 

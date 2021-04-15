@@ -28,7 +28,7 @@ class FeatureImportanceModel(NNModel):
 	
 	@staticmethod
 	def load(filepath: str) -> Tuple['FeatureImportanceModel', Optimizer]:
-		return Model.load(filepath, FeatureImportanceModel, NNParams)
+		return Model.load_with_classes(filepath, FeatureImportanceModel, NNParams)
 
 	@staticmethod
 	def run_feature_importance(nn_model_save_location: str) -> List[Tuple[str, Number]]:
@@ -54,7 +54,7 @@ class FeatureImportanceModel(NNModel):
 		
 
 if __name__ == '__main__':
-	nn_model_save_location, _, _, _ = NNModel.run_experiment(
+	_, _, _, nn_model_save_location = NNModel.run_experiment(
 		params = NNParams(
 			batch_size = 20,
 			transform_output_src = 'lambda y, nld: y',

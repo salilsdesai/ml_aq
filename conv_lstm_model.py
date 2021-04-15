@@ -242,14 +242,14 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 	
 	@staticmethod
 	def load(filepath: str) -> Tuple['ConvLSTMModel', Optimizer]:
-		return Model.load(filepath, ConvLSTMModel, ConvLSTMParams)
+		return Model.load_with_classes(filepath, ConvLSTMModel, ConvLSTMParams)
 
 	@staticmethod
 	def run_experiment(
 		params: ConvLSTMParams, 
 		make_optimizer: Callable[[torch.nn.Module], Optimizer], 
 		show_results: bool
-	) -> Tuple[str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+	) -> Tuple['Model', List[ReceptorBatch], Dict[str, float], str]:
 		return Model.run_experiment(
 			base_class = ConvLSTMModel,
 			params = params, 

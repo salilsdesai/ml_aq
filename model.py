@@ -129,13 +129,17 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		}, filepath)
 	
 	@staticmethod
-	def load(filepath: str, base_class, params_class) -> Tuple[Any, Optimizer]:
+	def load_with_classes(filepath: str, base_class, params_class) -> Tuple[Any, Optimizer]:
 		loaded = torch.load(filepath)
 		model = base_class(params_class.from_dict(loaded['model_params']))
 		model.load_state_dict(loaded['model_state_dict'])
 		optimizer = loaded['optimizer_class'](model.parameters())
 		optimizer.load_state_dict(loaded['optimizer_state_dict'])
 		return (model, optimizer)
+	
+	@staticmethod
+	def load(filepath: str) -> Tuple[Any, Optimizer]:
+		raise NotImplementedError
 
 	def train(
 		self, 
@@ -408,7 +412,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		params: Params,
 		make_optimizer: Callable[[torch.nn.Module], Optimizer], 
 		show_results: bool
-	) -> Tuple[str, Dict[str, float], List[ReceptorBatch], List[ReceptorBatch]]:
+	) -> Tuple['Model', List[ReceptorBatch], Dict[str, float], str]:
 		"""
 		Returns
 		- Model save location
@@ -435,6 +439,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			print_results = show_results,
 		)
 
+		model_optim: Tuple[Model, Optimizer] = base_class.load(save_location)
+		model: Model = model_optim[0]
+		_, val_batches = model.quick_setup()
+
 		errors = model.get_errors(val_batches)
 
 		if show_results:
@@ -442,5 +450,5 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			for (k, v) in errors.items():
 				print(k + ': ' + str(v))
 		
-		return (save_location, errors, train_batches, val_batches)
+		return (model, val_batches, errors, save_location)
 
