@@ -170,6 +170,10 @@ class ConvModel(Model):
 			batch.receptors.distances = \
 				(batch.receptors.distances - self.params.distance_feature_stats.mean) / (self.params.distance_feature_stats.std_dev)
 		
+			# TODO: Track keep feature stats properly (this assumes it's empty or only nearest link distance)
+			batch.receptors.keep = \
+				(batch.receptors.keep - 166.8276) / 111.7620
+
 		return batches
 
 	def filter_receptors(self, receptors: List[Receptor]) -> List[Receptor]:
