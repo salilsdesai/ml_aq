@@ -77,11 +77,14 @@ def get_feature_stats():
             ('vmt_times_fleet_mix_commercial', lambda link: vmt(link) * link.fleet_mix_commercial),
             ('vmt_times_fleet_mix_bus', lambda link: vmt(link) * link.fleet_mix_bus),
             ('up_down_wind_effect', lambda link: abs(sin((met_data[link.nearest_met_station_id].wind_direction - link.angle) * pi / 180))),
+            ('temperature', lambda link: met_data[link.nearest_met_station_id].temperature),
+            ('relative_humidity', lambda link: met_data[link.nearest_met_station_id].relative_humidity),
         ],
         [
             'traffic_speed', 'fleet_mix_light', 'fleet_mix_medium',
             'fleet_mix_heavy', 'fleet_mix_commercial', 'fleet_mix_bus', 
-            'population_density',
+            'population_density', 'elevation_mean', 
+            'nearest_met_station_distance',
         ],
     )
 

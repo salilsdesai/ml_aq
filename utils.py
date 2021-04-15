@@ -172,6 +172,11 @@ class Features():
 	WIND_DIRECTION = 'wind_direction'
 	WIND_SPEED = 'wind_speed'
 	UP_DOWN_WIND_EFFECT = 'up_down_wind_effect'
+	POPULATION_DENSITY = 'population_density'
+	ELEVATION_MEAN = 'elevation_mean'
+	NEAREST_MET_STATION_DISTANCE = 'nearest_met_station_distance'
+	TEMPERATURE = 'temperature'
+	RELATIVE_HUMIDITY = 'relative_humidity'
 	
 	ELEVATION_DIFFERENCE = 'elevation_difference'
 
@@ -186,6 +191,11 @@ class Features():
 		WIND_DIRECTION: lambda link, met_data: met_data[link.nearest_met_station_id].wind_direction,
 		WIND_SPEED: lambda link, met_data: met_data[link.nearest_met_station_id].wind_speed,
 		UP_DOWN_WIND_EFFECT: lambda link, met_data: abs(sin((met_data[link.nearest_met_station_id].wind_direction - link.angle) * pi / 180)),
+		POPULATION_DENSITY: lambda link, met_data: link.population_density,
+		ELEVATION_MEAN: lambda link, met_data: link.elevation_mean,
+		NEAREST_MET_STATION_DISTANCE: lambda link, met_data: link.nearest_met_station_distance,
+		TEMPERATURE: lambda link, met_data: met_data[link.nearest_met_station_id].temperature,
+		RELATIVE_HUMIDITY: lambda link, met_data: met_data[link.nearest_met_station_id].relative_humidity,
 	}
 
 	GET_FEATURE_DIFFERENCE_LINK_DATA: Dict[str, Callable[[Link], float]] = {
