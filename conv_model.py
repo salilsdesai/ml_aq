@@ -3,8 +3,8 @@ import torch
 from torch import Tensor
 from typing import List, Tuple, Dict, Optional, Any
 
-from model import Model, ReceptorBatch, Params
-from utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
+from .model import Model, ReceptorBatch, Params
+from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	partition, flatten, CumulativeStats
 
 class ConvLinkData():

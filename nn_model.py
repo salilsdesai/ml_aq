@@ -56,6 +56,7 @@ class NNParams(Params):
 		receptor_features: List[str],
 		hidden_size: int,
 		subtract_features: List[str],
+		invert_distance: bool,
 	):
 		Params.__init__(
 			self,
@@ -69,6 +70,7 @@ class NNParams(Params):
 		)
 		self.hidden_size: int = hidden_size
 		self.subtract_features: List[str] = subtract_features
+		self.invert_distance: bool = invert_distance
 	
 	@staticmethod
 	def from_dict(d: Dict[str, Any]) -> 'NNParams':
@@ -82,6 +84,7 @@ class NNParams(Params):
 			receptor_features = d['receptor_features'],
 			hidden_size = d['hidden_size'],
 			subtract_features = d['subtract_features'],
+			invert_distance = d['invert_distance']
 		)
 	
 	def as_dict(self) -> Dict[str, Any]:
@@ -92,6 +95,7 @@ class NNParams(Params):
 		d.update({
 			'hidden_size': self.hidden_size,
 			'subtract_features': self.subtract_features,
+			'invert_distance': self.invert_distance,
 		})
 		return d
 
@@ -114,13 +118,18 @@ class NNModel(Model):
 	def make_x(self, receptors: NNReceptorData) -> Tuple[Tensor, Tensor]:
 		if self.feature_stats is None:
 			raise Exception('Feature Stats Not Set')
-		distances_inv = (self.link_data.coords_dot - (2 * (receptors.coords @ self.link_data.coords)) + receptors.coords_dot).sqrt().reciprocal().unsqueeze(dim=2).type(Tensor).to(DEVICE)
+		# Set distances tensor
+		distances = (self.link_data.coords_dot - (2 * (receptors.coords @ self.link_data.coords)) + receptors.coords_dot).sqrt()
+		if self.params.invert_distance:
+			distances = distances.reciprocal()
+		distances = distances.unsqueeze(dim=2).type(Tensor).to(DEVICE)
+		
 		subtracted = self.link_data.subtract - receptors.subtract
 		links_kept = self.link_data.keep
 		receptors_kept = receptors.keep.unsqueeze(dim=1).repeat(1, self.link_data.keep.shape[1], 1)
-		cat = torch.cat((distances_inv, subtracted, links_kept, receptors_kept), dim=-1)
+		cat = torch.cat((distances, subtracted, links_kept, receptors_kept), dim=-1)
 		normalized = (cat - self.feature_stats.mean)/self.feature_stats.std_dev
-		filter = distances_inv > (1/self.params.distance_threshold)
+		filter = (distances > (1/self.params.distance_threshold)) if self.params.invert_distance else (distances < self.params.distance_threshold)
 		return (normalized, filter)
 	
 	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> List[ReceptorBatch]:
@@ -161,7 +170,7 @@ class NNModel(Model):
 
 	def set_feature_stats(self, all_feature_stats: Dict[str, Features.FeatureStats]) -> None:
 		stats = \
-			[all_feature_stats['distance_inverse']] + \
+			[all_feature_stats['distance_inverse' if self.params.invert_distance else 'distance']] + \
 			[all_feature_stats[sf] for sf in self.params.subtract_features] + \
 			[all_feature_stats[lf] for lf in self.params.link_features] + \
 			[all_feature_stats[rf] for rf in self.params.receptor_features]
@@ -220,8 +229,7 @@ if __name__ == '__main__':
 				Features.VMT, Features.TRAFFIC_SPEED, Features.FLEET_MIX_LIGHT,
 				Features.FLEET_MIX_MEDIUM, Features.FLEET_MIX_HEAVY,
 				Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
-				Features.WIND_DIRECTION, Features.WIND_SPEED,
-				Features.UP_DOWN_WIND_EFFECT,
+				Features.WIND_SPEED, Features.UP_DOWN_WIND_EFFECT,
 			],
 			receptor_features = [
 				Features.NEAREST_LINK_DISTANCE,
@@ -230,6 +238,7 @@ if __name__ == '__main__':
 			subtract_features = [
 				Features.ELEVATION_DIFFERENCE,
 			],
+			invert_distance = False,
 		),
 		make_optimizer = lambda m: torch.optim.AdamW(m.parameters(), lr=0.0001),
 		show_results = True,

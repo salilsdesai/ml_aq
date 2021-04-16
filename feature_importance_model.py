@@ -77,6 +77,7 @@ if __name__ == '__main__':
 			subtract_features = [
 				Features.ELEVATION_DIFFERENCE,
 			],
+			invert_distance = False,
 		),
 		make_optimizer = lambda m: torch.optim.AdamW(m.parameters(), lr=0.001),
 		show_results = True,
