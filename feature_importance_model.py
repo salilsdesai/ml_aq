@@ -47,7 +47,7 @@ class FeatureImportanceModel(NNModel):
 				attributions_list.append(attr.sum(dim=1))
 		
 		importances = torch.cat(tensors=attributions_list, dim=0).mean(dim=0)
-		feature_names = ['distance_inverse'] + model.params.subtract_features + model.params.link_features + model.params.receptor_features
+		feature_names = ['distance_inverse' if model.params.invert_distance else 'distance'] + model.params.subtract_features + model.params.link_features + model.params.receptor_features
 		if len(feature_names) != importances.shape[0]:
 			feature_names = ['?' for _ in range(importances.shape[0])]
 		return [(feature_names[i], importances[i].item()) for i in range(importances.shape[0])]
