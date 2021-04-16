@@ -421,10 +421,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 	) -> Tuple['Model', List[ReceptorBatch], Dict[str, float], str]:
 		"""
 		Returns
-		- Model save location
-		- Dict mapping error function name to error value
-		- Train receptor batches
+		- The best model
 		- Validation receptor batches
+		- Dict mapping error function name to error value
+		- Model save location
 		"""
 		
 		model = base_class(params)
