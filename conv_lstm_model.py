@@ -164,7 +164,7 @@ class EncoderDecoderConvLSTM(torch.nn.Module):
 		self.decoder_CNN = torch.nn.Conv3d(in_channels=out_chan,
 									 out_channels=1,
 									 kernel_size=(1, kernel_size, kernel_size),
-									 padding=(0, 1, 1)).to(DEVICE)
+									 padding=(0, kernel_size // 2, kernel_size // 2)).to(DEVICE)
 	
 
 	def autoencoder(self, x, seq_len, future_step, h_t, c_t):
