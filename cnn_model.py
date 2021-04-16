@@ -20,10 +20,12 @@ class CNNParams(ConvParams):
 		distance_threshold: float,
 		link_features: List[str],
 		receptor_features: List[str],
+		subtract_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats],
 		receptor_feature_stats: Optional[Features.FeatureStats],
+		subtract_feature_stats: Optional[Features.FeatureStats],
 		pool_size: int,
 		conv_hidden_sizes: List[int],
 		linear_hidden_sizes: List[int],
@@ -38,10 +40,12 @@ class CNNParams(ConvParams):
 			distance_threshold=distance_threshold,
 			link_features=link_features,
 			receptor_features=receptor_features,
+			subtract_features=subtract_features,
 			approx_bin_size=approx_bin_size,
 			kernel_size=kernel_size,
 			distance_feature_stats=distance_feature_stats,
 			receptor_feature_stats=receptor_feature_stats,
+			subtract_feature_stats=subtract_feature_stats,
 		)
 		self.pool_size: int = pool_size
 		self.conv_hidden_sizes: List[int] = conv_hidden_sizes
@@ -58,11 +62,13 @@ class CNNParams(ConvParams):
 			concentration_threshold = d['concentration_threshold'],
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
-			receptor_features= d['receptor_features'],
+			receptor_features = d['receptor_features'],
+			subtract_features = d['subtract_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
 			distance_feature_stats = Features.FeatureStats.deserialize(d['distance_feature_stats']),
 			receptor_feature_stats = Features.FeatureStats.deserialize(d['receptor_feature_stats']),
+			subtract_feature_stats = Features.FeatureStats.deserialize(d['subtract_feature_stats']),
 			pool_size = d['pool_size'],
 			conv_hidden_sizes = d['conv_hidden_sizes'],
 			linear_hidden_sizes = d['linear_hidden_sizes'],
@@ -157,26 +163,39 @@ class CNNModel(ConvModel):
 		return channels.squeeze(dim=1)
 	
 	
-	def make_receptor_data(self, distances: Tensor, keep: Tensor) -> ConvReceptorData:
+	def make_receptor_data(self, distances: Tensor, keep: Tensor, subtract: Tensor) -> ConvReceptorData:
 		"""
 		Override
 		"""
 		return ConvReceptorData(
 			distances=distances.unsqueeze(dim=1),
 			keep=keep,
+			subtract=subtract,
 		)
+	
+	def set_up_subtract(self, subtract: Tensor) -> Tensor:
+		"""
+		Override
+		"""
+		return subtract
 
 
 	def forward_batch(self, receptors: ConvReceptorData) -> Tensor:
 		"""
 		Override
 		"""
+		subtract = self.link_data.subtract - receptors.subtract
+		# TODO: Track "Subtract" stats properly (this way just assumes there's at most one)
+		if len(self.params.subtract_features) > 0:
+			subtract = (subtract - self.params.subtract_feature_stats.mean) / self.params.subtract_feature_stats.std_dev
+		
 		return self.forward(
 			torch.cat(
 				tensors = (
 					receptors.distances, 
 					self.link_data.channels,
 					receptors.keep.repeat(1, 1, self.link_data.bin_counts.shape[0], self.link_data.bin_counts.shape[1]),
+					subtract,
 				), 
 				dim = 1,
 			)
@@ -223,10 +242,14 @@ if __name__ == '__main__':
 			receptor_features = [
 				Features.NEAREST_LINK_DISTANCE,
 			],
+			subtract_features = [
+				Features.ELEVATION_DIFFERENCE,
+			],
 			approx_bin_size = 1000,
 			kernel_size = 5,
 			distance_feature_stats = None,
 			receptor_feature_stats = None,
+			subtract_feature_stats = None,
 			pool_size = 2,
 			conv_hidden_sizes = [6, 16],
 			linear_hidden_sizes = [120, 84],

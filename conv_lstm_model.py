@@ -10,8 +10,8 @@ from .utils import Features, DEVICE, lambda_to_string, A, B, TRANSFORM_OUTPUT, \
 	TRANSFORM_OUTPUT_INV
 
 class ConvLSTMReceptorData(ConvReceptorData):
-	def __init__(self, distances: Tensor, keep: Tensor, closest_filter: Tensor):
-		super(ConvLSTMReceptorData, self).__init__(distances=distances, keep=keep)
+	def __init__(self, distances: Tensor, keep: Tensor, subtract: Tensor, closest_filter: Tensor):
+		super(ConvLSTMReceptorData, self).__init__(distances=distances, keep=keep, subtract=subtract)
 		self.closest_filter: Tensor = closest_filter
 
 class ConvLSTMParams(ConvParams):
@@ -24,10 +24,12 @@ class ConvLSTMParams(ConvParams):
 		distance_threshold: float,
 		link_features: List[str],
 		receptor_features: List[str],
+		subtract_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats],
 		receptor_feature_stats: Optional[Features.FeatureStats],
+		subtract_feature_stats: Optional[Features.FeatureStats],
 		time_periods: List[str],
 		num_out_channels: int,
 	):
@@ -39,10 +41,12 @@ class ConvLSTMParams(ConvParams):
 			distance_threshold=distance_threshold,
 			link_features=link_features,
 			receptor_features=receptor_features,
+			subtract_features=subtract_features,
 			approx_bin_size=approx_bin_size,
 			kernel_size=kernel_size,
 			distance_feature_stats=distance_feature_stats,
 			receptor_feature_stats=receptor_feature_stats,
+			subtract_feature_stats=subtract_feature_stats
 		)
 		self.time_periods: List[str] = time_periods
 		self.num_out_channels: int = num_out_channels
@@ -57,10 +61,12 @@ class ConvLSTMParams(ConvParams):
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
 			receptor_features = d['receptor_features'],
+			subtract_features = d['subtract_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
 			distance_feature_stats = Features.FeatureStats.deserialize(d['distance_feature_stats']),
 			receptor_feature_stats = Features.FeatureStats.deserialize(d['receptor_feature_stats']),
+			subtract_feature_stats = Features.FeatureStats.deserialize(d['subtract_feature_stats']),
 			time_periods = d['time_periods'],
 			num_out_channels = d['num_out_channels'],
 		)
@@ -224,8 +230,7 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 		"""
 		return channels
 	
-	
-	def make_receptor_data(self, distances: Tensor, keep: Tensor) -> ConvLSTMReceptorData:
+	def make_receptor_data(self, distances: Tensor, keep: Tensor, subtract: Tensor) -> ConvLSTMReceptorData:
 		"""
 		Override
 		"""
@@ -234,19 +239,36 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 		return ConvLSTMReceptorData(
 			distances=distances, 
 			keep=keep.unsqueeze(dim=1), 
+			subtract=subtract.unsqueeze(dim=1),
 			closest_filter=closest_filter,
 		)
+	
+	def set_up_subtract(self, subtract: Tensor) -> Tensor:
+		"""
+		Override
+		"""
+		return subtract.unsqueeze(dim=1).repeat(1, len(self.params.time_periods), 1, 1, 1)
 
 	def forward_batch(self, receptors: ConvLSTMReceptorData) -> Tensor:
 		"""
 		Override
 		"""
 		num_time_periods = len(self.get_time_periods())
+		
+		# TODO: Track "Subtract" stats properly (this way just assumes there's at most one)
+		subtract = None
+		if len(self.params.subtract_features) > 0:
+			subtract = self.link_data.subtract - receptors.subtract
+			subtract = (subtract - self.params.subtract_feature_stats.mean) / self.params.subtract_feature_stats.std_dev
+		else:
+			subtract = self.link_data.subtract  # Do nothing
+		
 		x = torch.cat(
 			tensors=(
 				receptors.distances.repeat(1, num_time_periods, 1, 1, 1), 
 				self.link_data.channels,
 				receptors.keep.repeat(1, num_time_periods, 1, self.link_data.bin_counts.shape[0], self.link_data.bin_counts.shape[1]),
+				subtract,
 			), 
 			dim=2
 		)
@@ -295,10 +317,14 @@ if __name__ == '__main__':
 			receptor_features = [
 				Features.NEAREST_LINK_DISTANCE,
 			],
+			subtract_features = [
+				Features.ELEVATION_DIFFERENCE,
+			],
 			approx_bin_size = 1000,
 			kernel_size = 3,
 			distance_feature_stats = None,
 			receptor_feature_stats = None,
+			subtract_feature_stats = None,
 			time_periods = [''],
 			num_out_channels = 64,
 		),

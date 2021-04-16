@@ -54,8 +54,8 @@ class NNParams(Params):
 		distance_threshold: float,
 		link_features: List[str],
 		receptor_features: List[str],
-		hidden_size: int,
 		subtract_features: List[str],
+		hidden_size: int,
 		invert_distance: bool,
 	):
 		Params.__init__(
@@ -67,9 +67,9 @@ class NNParams(Params):
 			distance_threshold=distance_threshold,
 			link_features=link_features,
 			receptor_features=receptor_features,
+			subtract_features=subtract_features,
 		)
 		self.hidden_size: int = hidden_size
-		self.subtract_features: List[str] = subtract_features
 		self.invert_distance: bool = invert_distance
 	
 	@staticmethod
@@ -82,8 +82,8 @@ class NNParams(Params):
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
 			receptor_features = d['receptor_features'],
-			hidden_size = d['hidden_size'],
 			subtract_features = d['subtract_features'],
+			hidden_size = d['hidden_size'],
 			invert_distance = d['invert_distance']
 		)
 	
@@ -94,7 +94,6 @@ class NNParams(Params):
 		d = super().as_dict()
 		d.update({
 			'hidden_size': self.hidden_size,
-			'subtract_features': self.subtract_features,
 			'invert_distance': self.invert_distance,
 		})
 		return d

@@ -8,15 +8,17 @@ from .utils import Receptor, Link, Coordinate, Features, DEVICE, MetStation, \
 	partition, flatten, CumulativeStats
 
 class ConvLinkData():
-	def __init__(self, channels: Tensor, bin_counts: Tensor, bin_centers: Tensor):
+	def __init__(self, channels: Tensor, bin_counts: Tensor, bin_centers: Tensor, subtract: Tensor):
 		self.channels: Tensor = channels
 		self.bin_counts: Tensor = bin_counts
 		self.bin_centers: Tensor = bin_centers
+		self.subtract: Tensor = subtract
 
 class ConvReceptorData():
-	def __init__(self, distances: Tensor, keep: Tensor):
+	def __init__(self, distances: Tensor, keep: Tensor, subtract: Tensor):
 		self.distances: Tensor = distances
 		self.keep: Tensor = keep
+		self.subtract: Tensor = subtract
 
 class ConvReceptorBatch(ReceptorBatch):
 	def __init__(
@@ -47,10 +49,12 @@ class ConvParams(Params):
 		distance_threshold: float,
 		link_features: List[str],
 		receptor_features: List[str],
+		subtract_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats],
 		receptor_feature_stats: Optional[Features.FeatureStats],
+		subtract_feature_stats: Optional[Features.FeatureStats],
 	):
 		Params.__init__(
 			self,
@@ -61,6 +65,7 @@ class ConvParams(Params):
 			distance_threshold=distance_threshold,
 			link_features=link_features,
 			receptor_features=receptor_features,
+			subtract_features=subtract_features,
 		)
 		self.approx_bin_size: float = approx_bin_size
 		self.kernel_size: int = kernel_size
@@ -68,6 +73,8 @@ class ConvParams(Params):
 			distance_feature_stats 
 		self.receptor_feature_stats: Optional[Features.FeatureStats] = \
 			receptor_feature_stats 
+		self.subtract_feature_stats: Optional[Features.FeatureStats] = \
+			subtract_feature_stats 
 	
 	@staticmethod
 	def from_dict(d: Dict[str, Any]) -> 'ConvParams':
@@ -79,10 +86,12 @@ class ConvParams(Params):
 			distance_threshold = d['distance_threshold'],
 			link_features = d['link_features'],
 			receptor_features = d['receptor_features'],
+			subtract_features = d['subtract_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
 			distance_feature_stats = Features.FeatureStats.deserialize(d['distance_feature_stats']),
 			receptor_feature_stats = Features.FeatureStats.deserialize(d['receptor_feature_stats']),
+			subtract_feature_stats = Features.FeatureStats.deserialize(d['subtract_feature_stats']),
 		)
 	
 	def as_dict(self) -> Dict[str, Any]:
@@ -95,6 +104,7 @@ class ConvParams(Params):
 			'kernel_size': self.kernel_size,
 			'distance_feature_stats': Features.FeatureStats.serialize(self.distance_feature_stats),
 			'receptor_feature_stats': Features.FeatureStats.serialize(self.receptor_feature_stats),
+			'subtract_feature_stats': Features.FeatureStats.serialize(self.subtract_feature_stats),
 		})
 		return d
 
@@ -102,7 +112,7 @@ class ConvModel(Model):
 	def __init__(self, params: ConvParams):
 		Model.__init__(self, params)
 		self.params: ConvParams = params
-		self.input_size: int = 1 + len(self.params.link_features) + len(self.params.receptor_features) # +1 for distance
+		self.input_size: int = 1 + len(self.params.link_features) + len(self.params.receptor_features) + len(self.params.subtract_features) # +1 for distance
 
 	def get_receptor_locations(self, receptors_list: List[Receptor]) -> Tuple[List[List[float]], Tensor]:
 		"""
@@ -130,10 +140,10 @@ class ConvModel(Model):
 		if len(receptors) == 0:
 			return []
 
-		# TODO: Track "Keep" stats properly (this way just assumes there's at most one)
-		distance_cs, keep_cs = (CumulativeStats(), CumulativeStats()) \
+		# TODO: Track "Keep" and "Subtract" stats properly (this way just assumes there's at most one)
+		distance_cs, keep_cs, subtract_cs = (CumulativeStats(), CumulativeStats(), CumulativeStats()) \
 			if self.params.distance_feature_stats is None \
-			else (None, None)
+			else (None, None, None)
 
 		def make_batch(receptors_list: List[Receptor]) -> ReceptorBatch:
 			coords_list, distances = self.get_receptor_locations(receptors_list)
@@ -144,7 +154,13 @@ class ConvModel(Model):
 			] for r in receptors_list]).to(DEVICE)  # num receptors x num features
 			keep = keep.unsqueeze(dim=2).unsqueeze(dim=3)
 
-			data = self.make_receptor_data(distances=distances, keep=keep)
+			subtract = Tensor([[
+				Features.GET_FEATURE_DIFFERENCE_RECEPTOR_DATA[f](r) \
+					for f in self.params.subtract_features
+			] for r in receptors_list]).to(DEVICE) # num receptors x num features
+			subtract = subtract.unsqueeze(dim=2).unsqueeze(dim=3) 
+
+			data = self.make_receptor_data(distances=distances, keep=keep, subtract=subtract)
 
 			y = Tensor([[self.params.transform_output(r.pollution_concentration, r.nearest_link_distance)] for r in receptors_list]).to(DEVICE)
 			nearest_link_distances = Tensor([[r.nearest_link_distance] for r in receptors_list]).to(DEVICE)
@@ -153,9 +169,11 @@ class ConvModel(Model):
 			if distance_cs is not None:
 				distance_cs.update(distances)
 
-			# TODO: Track "Keep" stats properly (this way just assumes there's at most one)
-			if keep_cs is not None:
+			# TODO: Track "Keep" and "Subtract" stats properly (this way just assumes there's at most one)
+			if keep_cs is not None and len(self.params.receptor_features) > 0:
 				keep_cs.update(keep)
+			if subtract_cs is not None and len(self.params.subtract_features) > 0:
+				subtract_cs.update(self.link_data.subtract - data.subtract)
 
 			return ConvReceptorBatch(
 				receptors = data,
@@ -172,12 +190,18 @@ class ConvModel(Model):
 				std_dev = distance_cs.stddev.item(),
 			)
 		
-		# TODO: Track "Keep" stats properly (this way just assumes there's at most one)
+		# TODO: Track "Keep" and "Subtract" stats properly (this way just assumes there's at most one)
 		if keep_cs is not None:
 			self.params.receptor_feature_stats = Features.FeatureStats(
 				mean = keep_cs.mean.item(),
 				std_dev = keep_cs.stddev.item(),
 			)
+		if subtract_cs is not None:
+			self.params.subtract_feature_stats = Features.FeatureStats(
+				mean = subtract_cs.mean.item(),
+				std_dev = subtract_cs.stddev.item()
+			)
+		
 
 		for batch in batches:
 			batch.receptors.distances = \
@@ -240,6 +264,9 @@ class ConvModel(Model):
 			num_x,
 			num_y,
 		).to(DEVICE)
+
+		subtract = torch.zeros(len(self.params.subtract_features), num_x, num_y).to(DEVICE)
+
 		counts = torch.zeros(num_x, num_y).to(DEVICE)
 
 		for link in links:
@@ -251,6 +278,8 @@ class ConvModel(Model):
 						Features.GET_FEATURE_WITH_SUFFIX[
 							self.params.link_features[j]
 						](link, time_periods[i], met_data)
+			for i in range(subtract.shape[0]):
+				subtract[i][bin_x][bin_y] += Features.GET_FEATURE_DIFFERENCE_LINK_DATA[self.params.subtract_features[i]](link)
 			counts[bin_x][bin_y] += 1
 		
 		for bin_x in range(num_x):
@@ -259,6 +288,8 @@ class ConvModel(Model):
 					for i in range(channels.shape[0]):
 						for j in range(channels.shape[1]):
 							channels[i][j][bin_x][bin_y] /= counts[bin_x][bin_y]
+					for i in range(subtract.shape[0]):
+						subtract[i][bin_x][bin_y] /= counts[bin_x][bin_y]
 
 		mean = channels.mean(dim=(0, 2, 3), keepdim=True)
 		std = channels.std(dim=(0, 2, 3), keepdim=True)
@@ -269,10 +300,13 @@ class ConvModel(Model):
 		y_centers = Tensor([min_y + ((j + 0.5) * size_y) for j in range(num_y)]).to(DEVICE)
 		centers = torch.cartesian_prod(x_centers, y_centers).reshape(x_centers.shape[0], y_centers.shape[0], 2).unsqueeze(dim=0)
 
+		subtract = subtract.unsqueeze(0).repeat(self.params.batch_size, 1, 1, 1)
+
 		self.link_data = ConvLinkData(
 			channels = self.set_up_on_channel_dims(channels),
 			bin_counts = counts,
 			bin_centers = centers,
+			subtract = self.set_up_subtract(subtract),
 		)
 	
 	def prep_experiment(self, directory: str) -> None:
@@ -281,12 +315,16 @@ class ConvModel(Model):
 	def set_up_on_channel_dims(self, channels: Tensor) -> Tensor:
 		raise NotImplementedError
 	
-	def make_receptor_data(self, distances: Tensor, keep: Tensor) -> ConvReceptorData:
+	def make_receptor_data(self, distances: Tensor, keep: Tensor, subtract: Tensor) -> ConvReceptorData:
 		"""
 		Distances is (# receptors) x (num bins x) x (num bins y)
 		Keep is (# receptors) x (# channels) x (1) x (1)
+		Subtract is (# receptors) x (# channels) x (1) x (1)
 		"""
 		raise NotImplementedError()
 	
 	def get_time_periods(self) -> List[str]:
+		raise NotImplementedError()
+	
+	def set_up_subtract(self, subtract: Tensor) -> Tensor:
 		raise NotImplementedError()

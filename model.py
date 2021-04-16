@@ -49,6 +49,7 @@ class Params():
 		distance_threshold: float,
 		link_features: List[str],
 		receptor_features: List[str],
+		subtract_features: List[str],
 	):
 		self.batch_size: int = batch_size
 		self.transform_output_src: str = transform_output_src
@@ -61,6 +62,7 @@ class Params():
 		self.distance_threshold: float = distance_threshold
 		self.link_features: List[str] = link_features
 		self.receptor_features: List[str] = receptor_features
+		self.subtract_features: List[str] = subtract_features
 	
 	def as_dict(self) -> Dict[str, Any]:
 		return {
@@ -71,6 +73,7 @@ class Params():
 			'distance_threshold': self.distance_threshold,
 			'link_features': self.link_features,
 			'receptor_features': self.receptor_features,
+			'subtract_features': self.subtract_features,
 		}
 
 
