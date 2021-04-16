@@ -167,7 +167,7 @@ class ConvModel(Model):
 			coordinates = [Coordinate(c[0], c[1]) for c in coords_list]
 
 			if distance_cs is not None:
-				distance_cs.update(distances)
+				distance_cs.update(data.distances)
 
 			# TODO: Track "Keep" and "Subtract" stats properly (this way just assumes there's at most one)
 			if keep_cs is not None and len(self.params.receptor_features) > 0:
