@@ -23,6 +23,7 @@ class CNNParams(ConvParams):
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats],
+		receptor_feature_stats: Optional[Features.FeatureStats],
 		pool_size: int,
 		conv_hidden_sizes: List[int],
 		linear_hidden_sizes: List[int],
@@ -40,6 +41,7 @@ class CNNParams(ConvParams):
 			approx_bin_size=approx_bin_size,
 			kernel_size=kernel_size,
 			distance_feature_stats=distance_feature_stats,
+			receptor_feature_stats=receptor_feature_stats,
 		)
 		self.pool_size: int = pool_size
 		self.conv_hidden_sizes: List[int] = conv_hidden_sizes
@@ -59,10 +61,8 @@ class CNNParams(ConvParams):
 			receptor_features= d['receptor_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
-			distance_feature_stats = Features.FeatureStats(
-				mean = d['distances_feature_stats'][0], 
-				std_dev = d['distances_feature_stats'][1]
-			)  if d['distances_feature_stats'] is not None else None,
+			distance_feature_stats = Features.FeatureStats.deserialize(d['distance_feature_stats']),
+			receptor_feature_stats = Features.FeatureStats.deserialize(d['receptor_feature_stats']),
 			pool_size = d['pool_size'],
 			conv_hidden_sizes = d['conv_hidden_sizes'],
 			linear_hidden_sizes = d['linear_hidden_sizes'],
@@ -226,6 +226,7 @@ if __name__ == '__main__':
 			approx_bin_size = 1000,
 			kernel_size = 5,
 			distance_feature_stats = None,
+			receptor_feature_stats = None,
 			pool_size = 2,
 			conv_hidden_sizes = [6, 16],
 			linear_hidden_sizes = [120, 84],

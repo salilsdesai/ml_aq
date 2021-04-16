@@ -49,7 +49,8 @@ class ConvParams(Params):
 		receptor_features: List[str],
 		approx_bin_size: float,
 		kernel_size: int,
-		distance_feature_stats: Optional[Features.FeatureStats]
+		distance_feature_stats: Optional[Features.FeatureStats],
+		receptor_feature_stats: Optional[Features.FeatureStats],
 	):
 		Params.__init__(
 			self,
@@ -65,6 +66,8 @@ class ConvParams(Params):
 		self.kernel_size: int = kernel_size
 		self.distance_feature_stats: Optional[Features.FeatureStats] = \
 			distance_feature_stats 
+		self.receptor_feature_stats: Optional[Features.FeatureStats] = \
+			receptor_feature_stats 
 	
 	@staticmethod
 	def from_dict(d: Dict[str, Any]) -> 'ConvParams':
@@ -78,10 +81,8 @@ class ConvParams(Params):
 			receptor_features = d['receptor_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
-			distance_feature_stats = Features.FeatureStats(
-				mean = d['distances_feature_stats'][0], 
-				std_dev = d['distances_feature_stats'][1]
-			)  if d['distances_feature_stats'] is not None else None,
+			distance_feature_stats = Features.FeatureStats.deserialize(d['distance_feature_stats']),
+			receptor_feature_stats = Features.FeatureStats.deserialize(d['receptor_feature_stats']),
 		)
 	
 	def as_dict(self) -> Dict[str, Any]:
@@ -92,10 +93,8 @@ class ConvParams(Params):
 		d.update({
 			'approx_bin_size': self.approx_bin_size,
 			'kernel_size': self.kernel_size,
-			'distances_feature_stats': (
-				self.distance_feature_stats.mean, 
-				self.distance_feature_stats.std_dev
-			) if self.distance_feature_stats is not None else None,
+			'distance_feature_stats': Features.FeatureStats.serialize(self.distance_feature_stats),
+			'receptor_feature_stats': Features.FeatureStats.serialize(self.receptor_feature_stats),
 		})
 		return d
 
@@ -131,7 +130,10 @@ class ConvModel(Model):
 		if len(receptors) == 0:
 			return []
 
-		cumulative_stats = CumulativeStats() if self.params.distance_feature_stats is None else None
+		# TODO: Track "Keep" stats properly (this way just assumes there's at most one)
+		distance_cs, keep_cs = (CumulativeStats(), CumulativeStats()) \
+			if self.params.distance_feature_stats is None \
+			else (None, None)
 
 		def make_batch(receptors_list: List[Receptor]) -> ReceptorBatch:
 			coords_list, distances = self.get_receptor_locations(receptors_list)
@@ -148,8 +150,12 @@ class ConvModel(Model):
 			nearest_link_distances = Tensor([[r.nearest_link_distance] for r in receptors_list]).to(DEVICE)
 			coordinates = [Coordinate(c[0], c[1]) for c in coords_list]
 
-			if cumulative_stats is not None:
-				cumulative_stats.update(distances)
+			if distance_cs is not None:
+				distance_cs.update(distances)
+
+			# TODO: Track "Keep" stats properly (this way just assumes there's at most one)
+			if keep_cs is not None:
+				keep_cs.update(keep)
 
 			return ConvReceptorBatch(
 				receptors = data,
@@ -160,19 +166,27 @@ class ConvModel(Model):
 		
 		batches = [make_batch(receptors_list) for receptors_list in receptors]
 
-		if cumulative_stats is not None:
+		if distance_cs is not None:
 			self.params.distance_feature_stats = Features.FeatureStats(
-				mean = cumulative_stats.mean.item(),
-				std_dev = cumulative_stats.stddev.item(),
+				mean = distance_cs.mean.item(),
+				std_dev = distance_cs.stddev.item(),
+			)
+		
+		# TODO: Track "Keep" stats properly (this way just assumes there's at most one)
+		if keep_cs is not None:
+			self.params.receptor_feature_stats = Features.FeatureStats(
+				mean = keep_cs.mean.item(),
+				std_dev = keep_cs.stddev.item(),
 			)
 
 		for batch in batches:
 			batch.receptors.distances = \
 				(batch.receptors.distances - self.params.distance_feature_stats.mean) / (self.params.distance_feature_stats.std_dev)
-		
-			# TODO: Track keep feature stats properly (this assumes it's empty or only nearest link distance)
-			batch.receptors.keep = \
-				(batch.receptors.keep - 166.8276) / 111.7620
+			
+			# TODO: Track "Keep" stats properly (this way just assumes there's at most one)
+			if len(self.params.receptor_features) > 0:
+				batch.receptors.keep = \
+					(batch.receptors.keep - self.params.receptor_feature_stats.mean) / self.params.receptor_feature_stats.std_dev
 
 		return batches
 

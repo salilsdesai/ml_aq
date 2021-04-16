@@ -27,6 +27,7 @@ class ConvLSTMParams(ConvParams):
 		approx_bin_size: float,
 		kernel_size: int,
 		distance_feature_stats: Optional[Features.FeatureStats],
+		receptor_feature_stats: Optional[Features.FeatureStats],
 		time_periods: List[str],
 		num_out_channels: int,
 	):
@@ -41,6 +42,7 @@ class ConvLSTMParams(ConvParams):
 			approx_bin_size=approx_bin_size,
 			kernel_size=kernel_size,
 			distance_feature_stats=distance_feature_stats,
+			receptor_feature_stats=receptor_feature_stats,
 		)
 		self.time_periods: List[str] = time_periods
 		self.num_out_channels: int = num_out_channels
@@ -57,10 +59,8 @@ class ConvLSTMParams(ConvParams):
 			receptor_features = d['receptor_features'],
 			approx_bin_size = d['approx_bin_size'],
 			kernel_size = d['kernel_size'],
-			distance_feature_stats = Features.FeatureStats(
-				mean = d['distances_feature_stats'][0], 
-				std_dev = d['distances_feature_stats'][1]
-			)  if d['distances_feature_stats'] is not None else None,
+			distance_feature_stats = Features.FeatureStats.deserialize(d['distance_feature_stats']),
+			receptor_feature_stats = Features.FeatureStats.deserialize(d['receptor_feature_stats']),
 			time_periods = d['time_periods'],
 			num_out_channels = d['num_out_channels'],
 		)
@@ -298,6 +298,7 @@ if __name__ == '__main__':
 			approx_bin_size = 1000,
 			kernel_size = 3,
 			distance_feature_stats = None,
+			receptor_feature_stats = None,
 			time_periods = [''],
 			num_out_channels = 64,
 		),

@@ -13,7 +13,7 @@ from requests import get
 from time import strftime
 from torch import Tensor
 from torch.types import Number
-from typing import Any, Dict, List, Union, Callable, Tuple
+from typing import Any, Dict, List, Union, Callable, Tuple, Optional
 
 DEVICE: str = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -232,6 +232,18 @@ class Features():
 		def __init__(self, mean, std_dev):
 			self.mean = mean
 			self.std_dev = std_dev
+		
+		@staticmethod
+		def serialize(fs: Optional['Features.FeatureStats']) -> Optional[Tuple[Any, Any]]:
+			if fs is None:
+				return None
+			return (fs.mean, fs.std_dev)
+		
+		@staticmethod
+		def deserialize(tup: Optional[Tuple[Any, Any]]) -> Optional['Features.FeatureStats']:
+			if tup is None:
+				return None
+			return Features.FeatureStats(mean=tup[0], std_dev=tup[1])
 
 	@staticmethod
 	def get_all_feature_stats(filepath: str) -> Dict[str, FeatureStats]:
@@ -263,7 +275,6 @@ def get_memory_usage() -> Tuple[Dict[Tuple[str, str], int], int]:
 	- Dict mapping from (type, size) -> count of number of objects
 	- Total number of values stored in tensors
 	"""
-	
 	d: Dict[Tuple[str, str], int] = {}
 	count: int = 0
 	for obj in gc.get_objects():
