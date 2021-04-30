@@ -33,7 +33,7 @@ class FeatureImportanceModel(NNModel):
 	@staticmethod
 	def run_feature_importance(nn_model_save_location: str) -> List[Tuple[str, Number]]:
 		model, _ = FeatureImportanceModel.load(nn_model_save_location)
-		_, val_batches = model.quick_setup()
+		_, val_batches, _ = model.quick_setup()
 
 		ig = IntegratedGradients(model)
 		attributions_list = []

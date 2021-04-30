@@ -10,9 +10,9 @@ from torch.optim import Optimizer
 from torch.types import Number
 from typing import Callable, List, Tuple, Optional, Dict, Any, TypeVar, Generic, Type
 
-from .utils import MetStation, mre, loss_function, error_function, Value, \
+from .utils import CumulativeStats, MetStation, mre, loss_function, error_function, Value, \
 	graph_error_function, mult_factor_error, Link, Receptor, Coordinate, \
-	flatten, Paths, NOTEBOOK_NAME, BASE_DIRECTORY, train_val_split, \
+	flatten, Paths, NOTEBOOK_NAME, BASE_DIRECTORY, train_val_test_split, \
 	partition
 
 ReceptorData = TypeVar('ReceptorData')
@@ -112,6 +112,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			('MRE', mre),
 			('MAE', torch.nn.L1Loss()),
 		]
+		variance_tracker = CumulativeStats()
 		errors = [0] * len(err_funcs)
 		with torch.no_grad():
 			for batch in batches:
@@ -123,7 +124,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 				)
 				for i in range(len(err_funcs)):
 					errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
-		return {err_funcs[i][0]: errors[i] for i in range(len(err_funcs))}
+				variance_tracker.update(y_hat_final)
+		errors_dict: Dict[str, float] = {err_funcs[i][0]: errors[i] for i in range(len(err_funcs))}
+		errors_dict.update({'Variance': float(variance_tracker.stddev.item() ** 2)})
+		return errors_dict
 
 	def save(self, filepath: str, optimizer: Optimizer) -> None:
 		torch.save({
@@ -391,7 +395,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 	def prep_experiment(self, directory: str) -> None:
 		raise NotImplementedError
 
-	def quick_setup(self) -> Tuple[List[ReceptorBatch], List[ReceptorBatch]]:
+	def quick_setup(self) -> Tuple[List[ReceptorBatch], List[ReceptorBatch], List[ReceptorBatch]]:
 		"""
 		Set up model for training/prediction using default data 
 		locations/directory after initializing it
@@ -405,12 +409,13 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		self.prep_experiment(BASE_DIRECTORY)
 
 		receptors_list = self.filter_receptors(Receptor.load_receptors(Paths.receptor_data(BASE_DIRECTORY)))
-		train_receptors_list, val_receptors_list = train_val_split(receptors_list)
+		train_receptors_list, val_receptors_list, test_receptors_list = train_val_test_split(receptors_list)
 
 		train_batches = self.make_receptor_batches(partition(train_receptors_list, self.params.batch_size))
 		val_batches = self.make_receptor_batches(partition(val_receptors_list, self.params.batch_size))
+		test_batches = self.make_receptor_batches(partition(test_receptors_list, self.params.batch_size))
 
-		return (train_batches, val_batches)
+		return (train_batches, val_batches, test_batches)
 
 	@staticmethod
 	def run_experiment(
@@ -422,13 +427,13 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		"""
 		Returns
 		- The best model
-		- Validation receptor batches
+		- Test receptor batches
 		- Dict mapping error function name to error value
 		- Model save location
 		"""
 		
 		model = base_class(params)
-		(train_batches, val_batches) = model.quick_setup()
+		(train_batches, val_batches, test_batches) = model.quick_setup()
 
 		save_location = Paths.save(BASE_DIRECTORY, NOTEBOOK_NAME)
 
@@ -447,14 +452,14 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 
 		model_optim: Tuple[Model, Optimizer] = base_class.load(save_location)
 		model: Model = model_optim[0]
-		_, val_batches = model.quick_setup()
+		_, _, test_batches = model.quick_setup()
 
-		errors = model.get_errors(val_batches)
+		errors = model.get_errors(test_batches)
 
 		if show_results:
-			model.graph_prediction_error(val_batches)
+			model.graph_prediction_error(test_batches)
 			for (k, v) in errors.items():
 				print(k + ': ' + str(v))
 		
-		return (model, val_batches, errors, save_location)
+		return (model, test_batches, errors, save_location)
 

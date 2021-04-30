@@ -261,10 +261,11 @@ class Features():
 def partition(l: List, size: int) -> List[List]:
 	return [l[i:i + size] for i in range(0, len(l) - size, size)]
 
-def train_val_split(l: List) -> Tuple[List, List]:
+def train_val_test_split(l: List) -> Tuple[List, List, List]:
 	train = [l[i] for i in range(len(l)) if (i % 5) < 3] # 60%
 	val = [l[i] for i in range(len(l)) if (i % 5) == 3] # 20%
-	return (train, val)
+	test = [l[i] for i in range(len(l)) if (i % 5) == 4] # 20%
+	return (train, val, test)
 
 def flatten(l: List[List[Any]]) -> List[Any]:
 	return reduce(iconcat, l, [])
