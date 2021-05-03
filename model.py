@@ -4,6 +4,7 @@ import torch
 from functools import reduce
 from matplotlib import pyplot as plt
 from matplotlib import colors, ticker
+from scipy.stats import norm, kstest
 from time import time, strftime, localtime
 from torch import Tensor
 from torch.optim import Optimizer
@@ -399,6 +400,27 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			out_file.write(format(prediction))
 		out_file.close()
 	
+	def analyze_absolute_error(self, batches: List[ReceptorBatch]):
+		def get_absolute_errors(batch: ReceptorBatch) -> List[float]:
+			y_final = self.params.transform_output_inv(batch.y, batch.nearest_link_distances).cpu()
+			y_hat_final = self.params.transform_output_inv(
+				self.forward_batch(batch.receptors), 
+				batch.nearest_link_distances
+			).cpu()
+			return (y_hat_final - y_final).tolist()
+
+		absolute_errors = None
+		with torch.no_grad():
+			absolute_errors = np.asarray(flatten([get_absolute_errors(b) for b in batches]))
+		
+		print('Mean: ' + str(np.mean(absolute_errors)))
+		print('Standard Deviation: ' + str(np.std(absolute_errors)))
+		print('Kolmogorov-Smirnov Test Result: ' + str(kstest(absolute_errors, norm.cdf)))
+
+		plt.hist(absolute_errors, bins=1000)
+		plt.title('Distribution of Absolute Errors')
+		plt.show()
+
 	def prep_experiment(self, directory: str) -> None:
 		raise NotImplementedError
 
