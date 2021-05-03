@@ -112,21 +112,28 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 			('MRE', mre),
 			('MAE', torch.nn.L1Loss()),
 		]
-		variance_tracker = CumulativeStats()
 		errors = [0] * len(err_funcs)
+		variance_tracker = CumulativeStats()
+		avg_modeling_time = 0
 		with torch.no_grad():
 			for batch in batches:
-				nld_cpu = batch.nearest_link_distances.cpu()
-				y_final = self.params.transform_output_inv(batch.y.cpu(), nld_cpu)
+				y_final = self.params.transform_output_inv(batch.y, batch.nearest_link_distances).cpu()
+				start_time = time()
 				y_hat_final = self.params.transform_output_inv(
-					self.forward_batch(batch.receptors).cpu(), 
-					nld_cpu
+					self.forward_batch(batch.receptors), 
+					batch.nearest_link_distances
 				)
+				end_time = time()
+				avg_modeling_time += (end_time - start_time) / len(batches)
+				y_hat_final = y_hat_final.cpu()
 				for i in range(len(err_funcs)):
 					errors[i] += err_funcs[i][1](y_hat_final, y_final).item() / len(batches)
 				variance_tracker.update(y_hat_final)
 		errors_dict: Dict[str, float] = {err_funcs[i][0]: errors[i] for i in range(len(err_funcs))}
-		errors_dict.update({'Variance': float(variance_tracker.stddev.item() ** 2)})
+		errors_dict.update({
+			'Variance': float(variance_tracker.stddev.item() ** 2),
+			'Average Modeling Time Per Batch': avg_modeling_time,
+		})
 		return errors_dict
 
 	def save(self, filepath: str, optimizer: Optimizer) -> None:
@@ -376,7 +383,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 					coord.y,
 					prediction,
 					actual,
-					graph_error_function(prediction, actual)
+					mre(prediction, actual)
 				)
 
 			return [make_tuple(i) for i in range(batch.size())]
