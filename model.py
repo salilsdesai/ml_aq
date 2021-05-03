@@ -383,7 +383,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 					coord.y,
 					prediction,
 					actual,
-					mre(prediction, actual)
+					mre(Tensor([prediction]), Tensor([actual])).item()
 				)
 
 			return [make_tuple(i) for i in range(batch.size())]
