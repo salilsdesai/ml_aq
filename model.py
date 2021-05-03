@@ -421,6 +421,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		plt.title('Distribution of Absolute Errors')
 		plt.show()
 
+		plt.hist(absolute_errors, bins=1000, range=[-0.5, 0.5])
+		plt.title('Distribution of Absolute Errors')
+		plt.show()
+
 	def prep_experiment(self, directory: str) -> None:
 		raise NotImplementedError
 
