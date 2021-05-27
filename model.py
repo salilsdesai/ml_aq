@@ -365,7 +365,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 				Tuple[float, float, Value, Value, Value]
 			]:
 			"""
-			returns list of [(x, y, prediction, actual, graph error)]
+			returns list of [(x, y, prediction, actual, MRE)]
 			for each receptor in the batch
 			"""
 			fwd = self.forward_batch(batch.receptors).detach()
@@ -432,7 +432,7 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		"""
 		Set up model for training/prediction using default data 
 		locations/directory after initializing it
-		Returns tuple of (Train Batches, Val Batches)
+		Returns tuple of (Train Batches, Val Batches, Test Batches)
 		"""
 		links_list = Link.load_links(Paths.link_data(BASE_DIRECTORY))
 		met_data = MetStation.load_met_data(Paths.met_data(BASE_DIRECTORY))
