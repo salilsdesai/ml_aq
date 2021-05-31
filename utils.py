@@ -262,9 +262,22 @@ def partition(l: List, size: int) -> List[List]:
 	return [l[i:i + size] for i in range(0, len(l) - size, size)]
 
 def train_val_test_split(l: List) -> Tuple[List, List, List]:
-	train = [l[i] for i in range(len(l)) if (i % 5) < 3] # 60%
-	val = [l[i] for i in range(len(l)) if (i % 5) == 3] # 20%
-	test = [l[i] for i in range(len(l)) if (i % 5) == 4] # 20%
+	l = l[:]  # Make a copy so original list isn't mutated
+	
+	# 70% train, 15% validation, 15% test
+	val_index = int(len(l) * 0.70)
+	test_index = int(len(l) * 0.85)
+
+	np.random.seed(0) # Fixed test set
+	np.random.shuffle(l)
+	test = l[test_index:]
+	l = l[:test_index]
+
+	np.random.seed() # Reset random seed
+	np.random.shuffle(l)
+	train = l[:val_index]
+	val = l[val_index:]
+
 	return (train, val, test)
 
 def flatten(l: List[List[Any]]) -> List[Any]:

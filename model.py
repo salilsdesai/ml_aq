@@ -441,12 +441,12 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 
 		self.prep_experiment(BASE_DIRECTORY)
 
-		receptors_list = self.filter_receptors(Receptor.load_receptors(Paths.receptor_data(BASE_DIRECTORY)))
+		receptors_list = Receptor.load_receptors(Paths.receptor_data(BASE_DIRECTORY))
 		train_receptors_list, val_receptors_list, test_receptors_list = train_val_test_split(receptors_list)
 
-		train_batches = self.make_receptor_batches(partition(train_receptors_list, self.params.batch_size))
-		val_batches = self.make_receptor_batches(partition(val_receptors_list, self.params.batch_size))
-		test_batches = self.make_receptor_batches(partition(test_receptors_list, self.params.batch_size))
+		train_batches = self.make_receptor_batches(partition(self.filter_receptors(train_receptors_list), self.params.batch_size))
+		val_batches = self.make_receptor_batches(partition(self.filter_receptors(val_receptors_list), self.params.batch_size))
+		test_batches = self.make_receptor_batches(partition(self.filter_receptors(test_receptors_list), self.params.batch_size))
 
 		return (train_batches, val_batches, test_batches)
 
