@@ -247,7 +247,7 @@ class Features():
 		}
 			
 def partition(l: List, size: int) -> List[List]:
-	return [l[i:i + size] for i in range(0, len(l) - size, size)]
+	return [l[i:i + size] for i in range(0, len(l) - size + 1, size)]
 
 def train_val_test_split(l: List) -> Tuple[List, List, List]:
 	l = l[:]  # Make a copy so original list isn't mutated
