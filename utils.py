@@ -36,18 +36,6 @@ def graph_error_function(y_hat, y) -> Value:
 def mult_factor_error(y_hat: Tensor, y: Tensor) -> Value:
 	return (torch.max(y_hat, y) / torch.min(y_hat, y)).mean()
 
-A, B = (0.8, 0.10297473583824722) # TODO: Move this
-TRANSFORM_OUTPUT = lambda y, nld: y * (np.exp(B * (nld ** 0.5)) / A)
-TRANSFORM_OUTPUT_INV = lambda y, nld: y / (np.exp(B * (nld ** 0.5)) / A)
-
-def lambda_to_string(f: Callable, replacements: List[Tuple[str, str]]) -> str:
-	src = inspect.getsourcelines(f)[0][0]
-	src = src[src.index('lambda'):]
-	src = src.replace('\n', '')
-	for (before, after) in replacements:
-		src = src.replace(before, after)
-	return src
-
 OUTLIER_LINK_ID: int = 246543  # This one is way off in the distance
 
 TIME_PERIODS: List[str] = ['_morning', '_midday', '_pm', '_nd']

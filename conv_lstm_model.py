@@ -6,8 +6,7 @@ from typing import List, Tuple, Dict, Optional, Any, Callable
 
 from .conv_model import ConvModel, ConvParams, ConvReceptorData
 from .model import Model, ReceptorBatch
-from .utils import Features, DEVICE, lambda_to_string, A, B, TRANSFORM_OUTPUT, \
-	TRANSFORM_OUTPUT_INV
+from .utils import Features, DEVICE
 
 class ConvLSTMReceptorData(ConvReceptorData):
 	def __init__(self, distances: Tensor, keep: Tensor, subtract: Tensor, closest_filter: Tensor):
@@ -296,22 +295,15 @@ class ConvLSTMModel(EncoderDecoderConvLSTM, ConvModel):
 if __name__ == '__main__':
 	_ = ConvLSTMModel.run_experiment(
 		params = ConvLSTMParams(
-			batch_size = 1000,
-			transform_output_src = lambda_to_string(
-				TRANSFORM_OUTPUT,
-				[('A', str(A)), ('B', str(B))]
-			),
-			transform_output_inv_src = lambda_to_string(
-				TRANSFORM_OUTPUT_INV,
-				[('A', str(A)), ('B', str(B))]
-			),
+			batch_size = 128,
+			transform_output_src = 'lambda y, nld: y * (nld ** 0.5)',
+			transform_output_inv_src = 'lambda y, nld: y / (nld ** 0.5)',
 			concentration_threshold = 0.01,
 			distance_threshold = 500,
 			link_features = [
 				Features.VMT, Features.TRAFFIC_SPEED, Features.FLEET_MIX_LIGHT,
 				Features.FLEET_MIX_MEDIUM, Features.FLEET_MIX_HEAVY,
-				Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
-				Features.WIND_DIRECTION, Features.WIND_SPEED,
+				Features.FLEET_MIX_COMMERCIAL, Features.WIND_SPEED,
 				Features.UP_DOWN_WIND_EFFECT,
 			],
 			receptor_features = [
