@@ -66,6 +66,9 @@ class Params():
 		self.subtract_features: List[str] = subtract_features
 	
 	def as_dict(self) -> Dict[str, Any]:
+		"""
+		Used to serialize the parameters when saving to a file
+		"""
 		return {
 			'batch_size': self.batch_size,
 			'transform_output_src': self.transform_output_src,
@@ -91,12 +94,22 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		return [r for r in receptors if (r.nearest_link_distance <= self.params.distance_threshold and r.pollution_concentration >= self.params.concentration_threshold)]
 	
 	def make_receptor_batches(self, receptors: List[List[Receptor]]) -> List[ReceptorBatch]:
+		"""
+		Prepare lists of receptors into batches to be passed into the model
+		"""
 		raise NotImplementedError 
 
 	def forward_batch(self, receptors: ReceptorData) -> Tensor:
+		"""
+		Pass a batch of receptors into the model for prediction
+		"""
 		raise NotImplementedError
 
 	def set_link_data(self, links: List[Link], met_data: Dict[int, MetStation]) -> None:
+		"""
+		Configure the model to use the provided links and meteorological data
+		for prediction
+		"""
 		raise NotImplementedError
 		
 	def get_error(self, receptors: ReceptorData, y: Tensor) -> Number:
@@ -107,6 +120,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		return error_function(y_hat, y).item()
 
 	def get_errors(self, batches: List[ReceptorBatch]) -> Dict[str, float]:
+		"""
+		Compute various metrics, as well as variance and modeling time.
+		Return a dict with keys as names of the metric and values as the values
+		"""	
 		err_funcs = [
 			('Mult Factor', mult_factor_error),
 			('MSE', torch.nn.MSELoss()),
@@ -138,6 +155,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		return errors_dict
 
 	def save(self, filepath: str, optimizer: Optimizer) -> None:
+		"""
+		Save a model and optimizer to file to load for continued training/
+		prediction in the future
+		"""
 		torch.save({
 			'model_params': self.params.as_dict(),
 			'model_state_dict': self.state_dict(),
@@ -148,6 +169,9 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 	
 	@staticmethod
 	def load_with_classes(filepath: str, base_class, params_class) -> Tuple[Any, Optimizer]:
+		"""
+		Helper function used to load model/optimizer from file
+		"""
 		loaded = torch.load(filepath)
 		model = base_class(params_class.from_dict(loaded['model_params']))
 		model.load_state_dict(loaded['model_state_dict'])
@@ -157,6 +181,9 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 	
 	@staticmethod
 	def load(filepath: str) -> Tuple[Any, Optimizer]:
+		"""
+		Load a model/optimizer from file
+		"""
 		raise NotImplementedError
 
 	def train(
@@ -169,6 +196,13 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		make_graphs: bool,
 		print_results: bool,
 	):
+		"""
+		Train a model. Training ends when num_epochs epochs pass or when 
+		validation error does not decrease for three consecutive epochs. Save
+		best model after each iteration a file if save_location is not None.
+		print_results and make_graphs can be set to print errors during training
+		and show graphs of error during the training process.
+		"""
 		if self.link_data is None:
 			raise Exception('Link Data Not Set')
 
@@ -225,6 +259,18 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 				plt.show()
 
 	def graph_prediction_error(self, batches: List[ReceptorBatch]) -> None:
+		"""
+		Display graphs which show the model's performance on a group of batches
+		- 	Scatter plot of graph error vs nearest link distance, on linear and 
+			logarithmic scales
+		- 	Average graph error vs nearest link distance (average taken over 
+			bins of size 5 meters)
+		- 	Average Predicted and Actual concentrations vs nearest link distance
+			on the same plot
+		-	Map of NYC with receptors plotted on it various colors, where darker
+			red corresponds to more intense underprediction, and darker blue 
+			more intense overprediction
+		"""
 		class Prediction():
 			def __init__(
 				self, 
@@ -401,6 +447,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		out_file.close()
 	
 	def analyze_absolute_error(self, batches: List[ReceptorBatch]):
+		"""
+		Runs Kolmogorov-Smirnov test to measure how closely distribution of 
+		absolute error (ŷ - y) follows normal distribution
+		"""
 		def get_absolute_errors(batch: ReceptorBatch) -> List[float]:
 			y_final = self.params.transform_output_inv(batch.y, batch.nearest_link_distances).cpu()
 			y_hat_final = self.params.transform_output_inv(
@@ -426,6 +476,10 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		plt.show()
 
 	def prep_experiment(self, directory: str) -> None:
+		"""
+		Subclass specific model setup which must be done before running
+		experiments
+		"""
 		raise NotImplementedError
 
 	def quick_setup(self) -> Tuple[List[ReceptorBatch], List[ReceptorBatch], List[ReceptorBatch]]:
@@ -458,6 +512,8 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		show_results: bool
 	) -> Tuple['Model', List[ReceptorBatch], Dict[str, float], str]:
 		"""
+		Run an experiment by training and evaluating a model with provided 
+		parameters. Uses quick_setup function to get data
 		Returns
 		- The best model
 		- Test receptor batches

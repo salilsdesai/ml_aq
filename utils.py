@@ -247,9 +247,16 @@ class Features():
 		}
 			
 def partition(l: List, size: int) -> List[List]:
+	"""
+	Parition a list into sublists of size [size]
+	"""
 	return [l[i:i + size] for i in range(0, len(l) - size + 1, size)]
 
 def train_val_test_split(l: List) -> Tuple[List, List, List]:
+	"""
+	Partition a list 70/15/15 with the last 15% always the same, but the 
+	split between the 70% and first 15% is randomized
+	"""
 	l = l[:]  # Make a copy so original list isn't mutated
 	
 	# 70% train, 15% validation, 15% test
@@ -269,6 +276,9 @@ def train_val_test_split(l: List) -> Tuple[List, List, List]:
 	return (train, val, test)
 
 def flatten(l: List[List[Any]]) -> List[Any]:
+	"""
+	Flatten a list of lists into a single list
+	"""
 	return reduce(iconcat, l, [])
 
 def get_memory_usage() -> Tuple[Dict[Tuple[str, str], int], int]:
@@ -303,6 +313,9 @@ def get_memory_usage() -> Tuple[Dict[Tuple[str, str], int], int]:
 
 class CumulativeStats:
 	"""
+	Used to track mean/std dev of large dataset in chunks (without having
+	to have the entire dataset in memory at once)
+	
 	Code based on
 	http://notmatthancock.github.io/2017/03/23/simple-batch-stat-updates.html
 	"""

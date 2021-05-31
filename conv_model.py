@@ -313,6 +313,10 @@ class ConvModel(Model):
 		pass  # Don't need to do anything
 	
 	def set_up_on_channel_dims(self, channels: Tensor) -> Tensor:
+		"""
+		Set up the model based on dimensions of convolutional channels.
+		Implemented by subclasses
+		"""
 		raise NotImplementedError
 	
 	def make_receptor_data(self, distances: Tensor, keep: Tensor, subtract: Tensor) -> ConvReceptorData:
@@ -324,6 +328,10 @@ class ConvModel(Model):
 		raise NotImplementedError()
 	
 	def get_time_periods(self) -> List[str]:
+		"""
+		Get a list of time periods which data passed into the model is divided
+		across. Used to set up convolutional channels
+		"""
 		raise NotImplementedError()
 	
 	def set_up_subtract(self, subtract: Tensor) -> Tensor:
