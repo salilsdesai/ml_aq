@@ -552,3 +552,32 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		
 		return (model, test_batches, errors, save_location)
 
+	def predict(self, receptors: List[Receptor]) -> List[float]:
+		"""
+		Use the model to predict pollution concentration for a group of
+		receptors
+		This combines make_receptor_batches, forward_batch, and 
+		transform_ouput_inv into a single function which is easy to use
+		"""
+		bs = self.params.batch_size
+		
+		# Duplicate the last element in the list until its length is a multiple
+		# of batch size
+		recep = receptors + [receptors[-1]] * ((bs - (len(receptors) % bs)) % bs)
+
+		batches = self.make_receptor_batches(partition(recep, bs))
+
+		predictions = None
+
+		with torch.no_grad():
+			predictions = flatten(list(map(
+				lambda batch: (
+					self.params.transform_output_inv(
+						self.forward_batch(batch.receptors), 
+						batch.nearest_link_distances,
+					).cpu().tolist()
+				),
+				batches
+			)))		
+
+		return predictions[:len(receptors)]
