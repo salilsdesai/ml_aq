@@ -1,6 +1,7 @@
 import torch
 
 from captum.attr import IntegratedGradients
+from matplotlib import pyplot as plt
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.types import Number
@@ -12,6 +13,7 @@ from .utils import Features
 
 class FeatureImportanceModel(NNModel):
 	def __init__(self, params: NNParams):
+		params.batch_size = 20  # Large batch sizes cause memory issues
 		super(FeatureImportanceModel, self).__init__(params)
 	
 	def forward(self, x: Tensor):
@@ -54,34 +56,16 @@ class FeatureImportanceModel(NNModel):
 		
 
 if __name__ == '__main__':
-	_, _, _, nn_model_save_location = NNModel.run_experiment(
-		params = NNParams(
-			batch_size = 20,
-			transform_output_src = 'lambda y, nld: y',
-			transform_output_inv_src = 'lambda y, nld: y',
-			concentration_threshold = 0.01,
-			distance_threshold = 500,
-			link_features = [
-				Features.VMT, Features.TRAFFIC_SPEED, Features.FLEET_MIX_LIGHT,
-				Features.FLEET_MIX_MEDIUM, Features.FLEET_MIX_HEAVY,
-				Features.FLEET_MIX_COMMERCIAL, Features.FLEET_MIX_BUS,
-				Features.WIND_SPEED, Features.UP_DOWN_WIND_EFFECT,
-				Features.POPULATION_DENSITY, Features.ELEVATION_MEAN,
-				Features.NEAREST_MET_STATION_DISTANCE, Features.TEMPERATURE,
-				Features.RELATIVE_HUMIDITY,
-			],
-			receptor_features = [
-				Features.NEAREST_LINK_DISTANCE,
-			],
-			hidden_size = 8,
-			subtract_features = [
-				Features.ELEVATION_DIFFERENCE,
-			],
-			invert_distance = False,
-		),
-		make_optimizer = lambda m: torch.optim.AdamW(m.parameters(), lr=0.001),
-		show_results = True,
-	)
+	nn_model_save_location = 'TODO: Fill in'
+
 	importances = FeatureImportanceModel.run_feature_importance(nn_model_save_location)
 	for l in importances:
 		print(l)
+
+	plt.barh(range(len(importances)), list(map(lambda t: t[1], importances)), tick_label=list(map(lambda t: t[0], importances)))
+	plt.title('Integrated Gradients Scores')
+	plt.show()
+
+	plt.barh(range(len(importances)), list(map(lambda t: abs(t[1]), importances)), tick_label=list(map(lambda t: t[0], importances)))
+	plt.title('Integrated Gradients Scores (Absolute Value)')
+	plt.show()
