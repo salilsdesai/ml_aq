@@ -9,7 +9,8 @@ from time import time, strftime, localtime
 from torch import Tensor
 from torch.optim import Optimizer
 from torch.types import Number
-from typing import Callable, List, Tuple, Optional, Dict, Any, TypeVar, Generic, Type
+from typing import Callable, List, Tuple, Optional, Dict, Any, TypeVar, \
+	Generic, Type, Set
 
 from .utils import CumulativeStats, MetStation, mre, loss_function, error_function, Value, \
 	graph_error_function, mult_factor_error, Link, Receptor, Coordinate, \
@@ -438,12 +439,26 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		with torch.no_grad():
 			predictions = flatten([predict_batch(batch) for batch in batches])
 		
+		Model._write_to_csv(
+			filepath=filepath,
+			header=['x', 'y', 'prediction', 'actual', 'error'],
+			data=predictions
+		)
+		
+	@staticmethod
+	def _write_to_csv(filepath: str, header: List[str], data: List[Any]) -> None:
+		def update(x):
+			if torch.is_tensor(x):
+				return x.item()
+			elif isinstance(x, list):
+				return x[0]
+			else:
+				return x
+		format = lambda l: str([update(x) for x in l]).replace('\'', '').replace(', ', ',')[1:-1] + '\n'		
 		out_file = open(filepath, 'w')
-		format = lambda l: \
-			str(l).replace('\'', '').replace(', ', ',')[1:-1] + '\n'
-		out_file.write(format(['x', 'y', 'prediction', 'actual', 'error']))
-		for prediction in predictions:
-			out_file.write(format(prediction))
+		out_file.write(format(header))
+		for datum in data:
+			out_file.write(format(datum))
 		out_file.close()
 	
 	def analyze_absolute_error(self, batches: List[ReceptorBatch]):
@@ -482,18 +497,23 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		"""
 		raise NotImplementedError
 
+	def _quick_setup_link_data_and_prep_experiment(self) -> None:
+		"""
+		Set up link data and prep it for training/prediction using default
+		link data 
+		"""
+		links_list = Link.load_links(Paths.link_data(BASE_DIRECTORY))
+		met_data = MetStation.load_met_data(Paths.met_data(BASE_DIRECTORY))		
+		self.set_link_data(links_list, met_data)
+		self.prep_experiment(BASE_DIRECTORY)
+
 	def quick_setup(self) -> Tuple[List[ReceptorBatch], List[ReceptorBatch], List[ReceptorBatch]]:
 		"""
 		Set up model for training/prediction using default data 
 		locations/directory after initializing it
 		Returns tuple of (Train Batches, Val Batches, Test Batches)
 		"""
-		links_list = Link.load_links(Paths.link_data(BASE_DIRECTORY))
-		met_data = MetStation.load_met_data(Paths.met_data(BASE_DIRECTORY))
-		
-		self.set_link_data(links_list, met_data)
-
-		self.prep_experiment(BASE_DIRECTORY)
+		self._quick_setup_link_data_and_prep_experiment()
 
 		receptors_list = Receptor.load_receptors(Paths.receptor_data(BASE_DIRECTORY))
 		train_receptors_list, val_receptors_list, test_receptors_list = train_val_test_split(receptors_list)
@@ -503,6 +523,59 @@ class Model(torch.nn.Module, Generic[LinkData, ReceptorData]):
 		test_batches = self.make_receptor_batches(partition(self.filter_receptors(test_receptors_list), self.params.batch_size))
 
 		return (train_batches, val_batches, test_batches)
+	
+	@staticmethod
+	def predict_all_default_receptors(
+		models: List['Model'],
+		output_filepath: str,
+		quick_setup_link_data_and_prep_experiment_first: bool,
+		model_names: Optional[List['str']] = None,
+	) -> None:
+		"""
+		Run a group of models on every receptor in the default dataset (even 
+		ones that would normally be filtered out), and save the results to a csv
+		file
+		"""
+		if model_names is not None:
+			assert len(models) == len(model_names)
+		else:
+			model_names = ['model_' + str(i) for i in range(len(models))]
+
+		if quick_setup_link_data_and_prep_experiment_first:
+			for m in models:
+				m._quick_setup_link_data_and_prep_experiment()
+			
+		receptors_list = Receptor.load_receptors(Paths.receptor_data(BASE_DIRECTORY))
+		receptors_splits: Tuple[List[Receptor], List[Receptor], List[Receptor]] = train_val_test_split(receptors_list)
+
+		predictions: Dict[Receptor, List[float]] = {r : [-1] * len(models) for r in receptors_list}
+		would_be_filtered_out: Dict[Receptor, List[bool]] = {r : [False] * len(models) for r in receptors_list}
+		is_train_receptor: Dict[Receptor, bool] = {}
+		
+		for split in receptors_splits:
+			for i in range(len(models)):
+				model = models[i]
+				curr_predictions = model.predict(split)
+				curr_not_filtered_out: Set[Receptor] = set(model.filter_receptors(split))
+				for j in range(len(split)):
+					r: Receptor = split[j]
+					predictions[r][i] = curr_predictions[j]
+					would_be_filtered_out[r][i] = r not in curr_not_filtered_out
+		
+		for i in range(len(receptors_splits)):
+			split = receptors_splits[i]
+			is_train = i != 2
+			for r in split:
+				is_train_receptor[r] = is_train
+
+		Model._write_to_csv(
+			filepath=output_filepath,
+			header=(['id'] + model_names + list(map(lambda n: 'filtered_out_by_' + n, model_names)) + ['is_training_receptor']),
+			data=[
+				[*[r.id], *predictions[r], *would_be_filtered_out[r], *[is_train_receptor[r]]]
+				for r in receptors_list
+			]
+		)
 
 	@staticmethod
 	def run_experiment(
